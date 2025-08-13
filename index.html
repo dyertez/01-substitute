@@ -128,7 +128,6 @@
           const [teacherAbsenceSearchQuery, setTeacherAbsenceSearchQuery] = useState('');
           const [selectedSubstituteId, setSelectedSubstituteId] = useState('');
 
-          const [timetableDisplayMode, setTimetableDisplayMode] = useState('all');
           const [timetableSearchQuery, setTimetableSearchQuery] = useState('');
           const [selectedTimetableTeacherId, setSelectedTimetableTeacherId] = useState('');
           
@@ -726,40 +725,50 @@
           }
           
           const filteredTeachers = useMemo(() => {
+              if (!selectedTimetableTeacherId && !timetableSearchQuery) {
+                  return teachers.sort((a, b) => a.id.localeCompare(b.id, 'th'));
+              }
+
               let currentTeachers = teachers;
 
               if (selectedTimetableTeacherId) {
                   currentTeachers = teachers.filter(teacher => teacher.id === selectedTimetableTeacherId);
               } else if (timetableSearchQuery) {
                   currentTeachers = teachers.filter(teacher =>
-                      teacher.name.toLowerCase().includes(timetableSearchQuery.toLowerCase())
+                      teacher.name.toLowerCase().includes(timetableSearchQuery.toLowerCase()) ||
+                      teacher.id.toLowerCase().includes(timetableSearchQuery.toLowerCase())
                   );
               }
               return currentTeachers.sort((a, b) => a.id.localeCompare(b.id, 'th'));
           }, [teachers, selectedTimetableTeacherId, timetableSearchQuery]);
 
           const substituteSummary = useMemo(() => {
-            const groupedSummary = {};
-            absences.forEach(abs => {
-              if (abs.substituteId) {
-                if (!groupedSummary[abs.substituteId]) {
-                  groupedSummary[abs.substituteId] = {teacherId: abs.substituteId,teacherName: 
-                  getTeacherName(abs.substituteId),substituteSlots: [],
-                  };
-                }
-                groupedSummary[abs.substituteId].substituteSlots.push({
-                  absentTeacherId: abs.teacherId,                 // เพิ่มรหัสครูที่ลา
-                  absentTeacherName: getTeacherName(abs.teacherId),
-                  dayIndex: abs.dayIndex,
-                  periodIndex: abs.periodIndex,
-                  time: abs.time || currentPeriodTimes[abs.periodIndex],
-                  subject: abs.subject,
-                  class: abs.class,
-                  room: abs.room,
+            const flatSummary = absences
+                .filter(abs => abs.substituteId) // Only include assigned substitutions
+                .map(abs => ({
+                    substituteId: abs.substituteId,
+                    substituteName: getTeacherName(abs.substituteId),
+                    absentTeacherId: abs.teacherId,
+                    absentTeacherName: getTeacherName(abs.teacherId),
+                    dayIndex: abs.dayIndex,
+                    periodIndex: abs.periodIndex,
+                    time: abs.time || currentPeriodTimes[abs.periodIndex],
+                    subject: abs.subject,
+                    class: abs.class,
+                    room: abs.room,
+                }))
+                .sort((a, b) => {
+                    // Sort by day, then substitute teacher, then period
+                    if (a.dayIndex !== b.dayIndex) return a.dayIndex - b.dayIndex;
+                    const nameA = a.substituteName || '';
+                    const nameB = b.substituteName || '';
+                    if (nameA.localeCompare(nameB, 'th') !== 0) {
+                        return nameA.localeCompare(nameB, 'th');
+                    }
+                    return a.periodIndex - b.periodIndex;
                 });
-              }
-            });
-            return Object.values(groupedSummary).sort((a, b) => a.teacherName.localeCompare(b.teacherName, 'th'));
+
+            return flatSummary;
           }, [absences, teachers, currentPeriodTimes]);
 
           // Memoize available substitutes to avoid recalculation
@@ -849,7 +858,7 @@
                                         <option value="">--เลือกครู--</option>
                                         {teachers
                                             .filter(teacher => !absentTeacherIds.includes(teacher.id))
-                                            .filter(teacher => teacher.id.toLowerCase().includes(teacherAbsenceSearchQuery.toLowerCase()))
+                                            .filter(teacher => teacher.name.toLowerCase().includes(teacherAbsenceSearchQuery.toLowerCase()))
                                             .sort((a, b) => a.id.localeCompare(b.id, 'th'))
                                             .map(teacher => (
                                                 <option key={teacher.id} value={teacher.id}>
@@ -1143,53 +1152,51 @@
                         </div>
                       </section>
 
-                      <section className="bg-yellow-50 border-l-4 border-yellow-200 p-4 rounded-lg mb-6 shadow-sm relative mt-6">
+                      <section className="bg-yellow-50 border-l-4 border-yellow-200 p-4 rounded-lg mb-6 shadow-sm mt-6">
                         <h2 className="text-xl font-semibold text-yellow-700 flex items-center gap-2 mb-4">
-                          <IconInfo className="w-5 h-5 text-yellow-600 mr-2" /> [ สรุป ] คาบสอนแทน
+                            <IconInfo className="w-5 h-5 text-yellow-600 mr-2" /> [ สรุป ] คาบสอนแทน
                         </h2>
                         {substituteSummary.length > 0 ? (
-                          <div className="space-y-6">
-                            {substituteSummary.map((subTeacher, index) => (
-                              <div key={subTeacher.teacherName} className="border border-yellow-200 rounded-xl p-4 bg-yellow-100 shadow-sm">
-                                <h3 className="text-lg font-bold text-yellow-800 mb-3">
-                                  ครูสอนแทน : {subTeacher.teacherId} - {subTeacher.teacherName}
-                                </h3>
-                                <div className="overflow-x-auto">
-                                  <table className="min-w-full table-auto border-collapse">
-                                    <thead>
-                                      <tr className="bg-yellow-200 text-yellow-800 font-bold uppercase text-xs">
-                                        <th className="p-2 border border-yellow-300 text-left">ครูที่ลา</th>
-                                        <th className="p-2 border border-yellow-300 text-left">วัน</th>
-                                        <th className="p-2 border border-yellow-300 text-left">คาบที่</th>
-                                        <th className="p-2 border border-yellow-300 text-left">เวลา</th>
-                                        <th className="p-2 border border-yellow-300 text-left">วิชา</th>
-                                        <th className="p-2 border border-yellow-300 text-left">ห้อง</th>
-                                        <th className="p-2 border border-yellow-300 text-left">ห้องเรียน</th>
-                                      </tr>
+                            <div className="overflow-x-auto">
+                                <table className="min-w-full table-auto border-collapse bg-white rounded-lg shadow-sm">
+                                    <thead className="bg-yellow-100 text-yellow-800 text-sm">
+                                        <tr>
+                                            <th className="p-3 border border-yellow-200 text-left">ครูสอนแทน</th>
+                                            <th className="p-3 border border-yellow-200 text-left">ครูที่ลา</th>
+                                            <th className="p-3 border border-yellow-200 text-left">วัน</th>
+                                            <th className="p-3 border border-yellow-200 text-center">คาบ</th>
+                                            <th className="p-3 border border-yellow-200 text-left">เวลา</th>
+                                            <th className="p-3 border border-yellow-200 text-left">วิชา</th>
+                                            <th className="p-3 border border-yellow-200 text-left">ห้อง</th>
+                                            <th className="p-3 border border-yellow-200 text-left">ห้องเรียน</th>
+                                        </tr>
                                     </thead>
                                     <tbody>
-                                      {subTeacher.substituteSlots.sort((a, b) => {
-                                        if (a.dayIndex !== b.dayIndex) return a.dayIndex - b.dayIndex;
-                                        return a.periodIndex - b.periodIndex;
-                                      }).map((slot, slotIndex) => (
-                                        <tr key={`${subTeacher.teacherName}-${slot.dayIndex}-${slot.periodIndex}-${slotIndex}`} className="text-xs bg-white even:bg-gray-50">
-                                          <td className="p-2 border border-gray-200 text-red-600">{slot.absentTeacherId} - {slot.absentTeacherName}</td>
-                                          <td className="p-2 border border-gray-200">{dayNames[slot.dayIndex]}</td>
-                                          <td className="p-2 border border-gray-200">{slot.periodIndex + 1}</td>
-                                          <td className="p-2 border border-gray-200">{slot.time}</td>
-                                          <td className="p-2 border border-gray-200">{slot.subject}</td>
-                                          <td className="p-2 border border-gray-200">{slot.class}</td>
-                                          <td className="p-2 border border-gray-200">{slot.room}</td>
-                                        </tr>
-                                      ))}
+                                        {substituteSummary.map((slot, index) => {
+                                            const prevSlot = index > 0 ? substituteSummary[index - 1] : null;
+                                            const showSubstituteName = !prevSlot || prevSlot.substituteId !== slot.substituteId;
+                                            const isNewGroup = showSubstituteName;
+
+                                            return (
+                                                <tr key={index} className={`text-sm even:bg-gray-50 hover:bg-yellow-50 ${isNewGroup && index > 0 ? 'border-t-2 border-yellow-400' : ''}`}>
+                                                    <td className="p-2 border border-gray-200 font-semibold text-green-700">
+                                                        {showSubstituteName ? `${slot.substituteName} (${slot.substituteId})` : ''}
+                                                    </td>
+                                                    <td className="p-2 border border-gray-200 text-red-600">{slot.absentTeacherName} ({slot.absentTeacherId})</td>
+                                                    <td className="p-2 border border-gray-200">{dayNames[slot.dayIndex]}</td>
+                                                    <td className="p-2 border border-gray-200 text-center">{slot.periodIndex + 1}</td>
+                                                    <td className="p-2 border border-gray-200">{slot.time}</td>
+                                                    <td className="p-2 border border-gray-200">{slot.subject}</td>
+                                                    <td className="p-2 border border-gray-200">{slot.class}</td>
+                                                    <td className="p-2 border border-gray-200">{slot.room}</td>
+                                                </tr>
+                                            );
+                                        })}
                                     </tbody>
-                                  </table>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
+                                </table>
+                            </div>
                         ) : (
-                          <p className="text-gray-500 text-center py-4">ยังไม่มีข้อมูลการสอนแทน</p>
+                            <p className="text-gray-500 text-center py-4">ยังไม่มีข้อมูลการสอนแทน</p>
                         )}
                       </section>
                     </>
@@ -1197,49 +1204,25 @@
 
                   {activeTab === 'full_schedule' && (
                     <section className="bg-white rounded-2xl p-6 border border-gray-200 shadow-sm">
-                        <div className="flex flex-col sm:flex-row items-center justify-between mb-4 gap-4">
-                          <h2 className="text-xl font-semibold text-blue-700 flex items-center gap-2">
-                            <IconCalendar /> ตารางสอนครู [ ทั้งหมด {teachers.length} คน ]
-                          </h2>
-                          <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
-                            <div className="flex items-center space-x-2 bg-gray-100 p-1 rounded-xl shadow-inner w-full sm:w-auto">
-                              <button
-                                onClick={() => { setTimetableDisplayMode('all'); setTimetableSearchQuery(''); setSelectedTimetableTeacherId(''); }}
-                                className={`px-4 py-1 rounded-xl text-sm font-medium transition-all duration-200 ease-in-out ${timetableDisplayMode === 'all' ? 'bg-blue-600 text-white shadow-md' : 'text-gray-700 hover:bg-gray-200'}`}
-                              >
-                                ทั้งหมด
-                              </button>
-                              <button
-                                onClick={() => setTimetableDisplayMode('search')}
-                                className={`px-4 py-1 rounded-xl text-sm font-medium transition-all duration-200 ease-in-out ${timetableDisplayMode === 'search' ? 'bg-blue-600 text-white shadow-md' : 'text-gray-700 hover:bg-gray-200'}`}
-                              >
-                                ค้นหา
-                              </button>
-                            </div>
-
-                            <button
-                                onClick={handleExportToExcel}
-                                className="px-4 py-2 rounded-xl bg-green-600 text-white font-medium shadow-sm hover:bg-green-700 transition-colors duration-200 flex items-center justify-center gap-2 w-full sm:w-auto"
-                                disabled={Object.values(schedule).flat().length === 0}
-                            >
-                                <IconFileDown className="w-5 h-5" />
-                                Export
-                            </button>
-                          </div>
+                        <div className="mb-4">
+                            <h2 className="text-xl font-semibold text-blue-700 flex items-center gap-2 whitespace-nowrap">
+                                <IconCalendar /> ตารางสอนครู [{filteredTeachers.length}/{teachers.length} คน]
+                            </h2>
                         </div>
-
-                        {timetableDisplayMode === 'search' && (
-                          <div className="mb-6 flex flex-col sm:flex-row gap-4">
-                            <div className="flex-1">
-                              <label htmlFor="teacher-dropdown-search" className="sr-only">เลือกชื่อครู</label>
-                              <select
-                                id="teacher-dropdown-search"
+                        <div className="flex flex-col sm:flex-row gap-2 w-full mb-6">
+                            <button
+                                onClick={() => { setSelectedTimetableTeacherId(''); setTimetableSearchQuery(''); }}
+                                className="px-4 py-2 rounded-xl bg-purple-600 text-white font-medium shadow-sm hover:bg-purple-700 transition-colors duration-200 flex items-center justify-center gap-2"
+                            >
+                                ทั้งหมด
+                            </button>
+                            <select
                                 value={selectedTimetableTeacherId}
                                 onChange={(e) => {
                                   setSelectedTimetableTeacherId(e.target.value);
                                   setTimetableSearchQuery('');
                                 }}
-                                className="block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 rounded-md shadow-sm appearance-none"
+                                className="flex-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 rounded-md shadow-sm appearance-none"
                               >
                                 <option value="">--เลือกครู--</option>
                                 {teachers.sort((a,b) => a.id.localeCompare(b.id, 'th')).map(teacher => (
@@ -1247,31 +1230,33 @@
                                     {teacher.id} - {teacher.name}
                                   </option>
                                 ))}
-                              </select>
-                            </div>
-                            <div className="flex-1">
-                              <label htmlFor="teacher-text-search" className="sr-only">ค้นหาชื่อครู</label>
-                              <input
-                                id="teacher-text-search"
+                            </select>
+                            <input
                                 type="text"
-                                placeholder="--พิมพ์ชื่อ--"
+                                placeholder="พิมพ์ชื่อครู"
                                 value={timetableSearchQuery}
                                 onChange={(e) => {
                                   setTimetableSearchQuery(e.target.value);
                                   setSelectedTimetableTeacherId('');
                                 }}
-                                className="block w-full px-4 py-2 text-base border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                              />
-                            </div>
-                          </div>
-                        )}
+                                className="flex-1 block w-full px-4 py-2 text-base border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                            />
+                            <button
+                                onClick={handleExportToExcel}
+                                className="px-4 py-2 rounded-xl bg-green-600 text-white font-medium shadow-sm hover:bg-green-700 transition-colors duration-200 flex items-center justify-center gap-2"
+                                disabled={Object.values(schedule).flat().length === 0}
+                            >
+                                <IconFileDown className="w-5 h-5" />
+                                Export
+                            </button>
+                        </div>
                         
-                        {(timetableDisplayMode === 'search' && filteredTeachers.length === 0) ? (
+                        {(filteredTeachers.length === 0) ? (
                           <div className="text-center text-gray-500 py-10">
                             ไม่พบชื่อครูที่คุณค้นหา
                           </div>
                         ) : (
-                          (timetableDisplayMode === 'all' ? teachers.sort((a, b) => a.id.localeCompare(b.id, 'th')) : filteredTeachers).map(teacher => (
+                          filteredTeachers.map(teacher => (
                               <div key={teacher.id} className="mb-8 last:mb-0">
                                   <h3 className="text-lg font-bold text-blue-600 mb-2 p-3 bg-blue-50 rounded-t-xl">
                                       ตารางสอนของ : {teacher.id} - {teacher.name}
@@ -1554,4 +1539,4 @@
         root.render(<App />);
     </script>
 </body>
-</html>
+</ht
