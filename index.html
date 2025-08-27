@@ -3,1308 +3,1594 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ระบบลงทะเบียนข้อมูลรายวิชาและครูผู้สอน</title>
+    <title>ระบบจัดสอนแทน (Offline)</title>
+    <!-- Tailwind CSS for styling -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;700&display=swap">
-    <!-- SheetJS for Excel Export -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <!-- Google Fonts: Sarabun for Thai language -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap" rel="stylesheet">
+    <!-- React Libraries -->
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <!-- Babel to transpile JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- XLSX for Excel export/import -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <style>
         body {
             font-family: 'Sarabun', sans-serif;
         }
-        .main-tab-active { background-color: #4f46e5; color: white; }
-        .view-mode-btn.active { background-color: #4f46e5; color: white; }
-        .dynamic-tab.active { border-color: #4f46e5; color: #4f46e5; background-color: #eef2ff; }
-        .view-container { display: none; }
-        .view-container.active { display: block; }
-        .table-container { display: none; }
-        .table-container.active { display: block; }
-        .room-cell { cursor: pointer; user-select: none; transition: background-color: 0.2s; }
-        .room-cell:hover { background-color: #ebf4ff; }
-        .modal-backdrop { background-color: rgba(0, 0, 0, 0.5); transition: opacity: 0.3s ease; }
-        #notification {
-            position: fixed;
-            bottom: 20px;
-            left: 50%;
-            transform: translateX(-50%);
-            padding: 12px 24px;
-            border-radius: 8px;
-            color: white;
-            font-weight: 500;
-            z-index: 1000;
-            opacity: 0;
-            visibility: hidden;
-            transition: opacity 0.3s, visibility 0.3s;
+        .shimmer-button::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -150%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(100deg, rgba(255, 255, 255, 0) 20%, rgba(255, 255, 255, 0.25) 50%, rgba(255, 255, 255, 0) 80%);
+            transform: skewX(-25deg);
+            animation: shimmer 3s infinite;
         }
-        #notification.show {
-            opacity: 1;
-            visibility: visible;
+        @keyframes shimmer {
+            100% {
+                left: 150%;
+            }
+        }
+        .aura-button {
+            animation: aura-pulse 2.5s infinite;
+        }
+        @keyframes aura-pulse {
+            0% { box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(22, 163, 74, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(22, 163, 74, 0); }
         }
     </style>
 </head>
-<body class="bg-gray-50 text-gray-800">
+<body class="bg-gray-50">
+    <!-- The root element where the React app will be mounted -->
+    <div id="root"></div>
 
-    <div class="container mx-auto p-4 sm:p-6 md:p-8">
-        <header class="text-center mb-4">
-            <div class="flex justify-center items-center">
-                <h1 class="text-3xl sm:text-4xl font-bold text-indigo-700">ระบบลงทะเบียนข้อมูลรายวิชาและครูผู้สอน</h1>
-            </div>
-            <p class="text-gray-600 mt-2">โรงเรียนตัวอย่างวิทยาคม</p>
-        </header>
-
-        <!-- Main Tabs -->
-        <div class="mb-6 flex justify-center border-b border-gray-200">
-             <div class="flex justify-center items-center gap-4 w-full pb-2 flex-wrap">
-                <div class="flex bg-gray-200 rounded-lg p-1 text-sm sm:text-base">
-                    <button onclick="changeMainView('teacherList')" id="teacherList-main-tab" class="main-tab-active px-3 sm:px-6 py-2 font-medium rounded-md">รายชื่อครู</button>
-                    <button onclick="changeMainView('courses')" id="courses-main-tab" class="px-3 sm:px-6 py-2 font-medium rounded-md">รายวิชา</button>
-                </div>
-                <div class="flex bg-gray-200 rounded-lg p-1 text-sm sm:text-base">
-                    <button onclick="changeMainView('teaching')" id="teaching-main-tab" class="px-3 sm:px-6 py-2 font-medium rounded-md">ลงทะเบียนสอน</button>
-                    <button onclick="changeMainView('teachers')" id="teachers-main-tab" class="px-3 sm:px-6 py-2 font-medium rounded-md">สรุปคาบสอน</button>
-                </div>
-            </div>
-        </div>
+    <!-- React Component and Rendering Logic -->
+    <script type="text/babel">
+        const { useState, useEffect, useMemo } = React;
         
-        <main>
-            <!-- Teacher List View -->
-            <div id="teacherList-view" class="view-container active">
-                <!-- Moved Buttons Above Header -->
-                <div class="flex justify-end items-center mb-4 gap-4">
-                    <button onclick="downloadTeacherTemplate()" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg transition-colors flex items-center gap-2 text-sm">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                          <path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd" />
-                        </svg>
-                        <span>ตัวอย่าง ไฟล์รายชื่อครู</span>
-                    </button>
-                    <input type="file" id="teacher-upload-input" class="hidden" accept=".xlsx, .xls" onchange="handleTeacherFileUpload(event)">
-                    <button onclick="document.getElementById('teacher-upload-input').click()" class="bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded-lg transition-colors flex items-center gap-2 text-sm">
-                       <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                         <path d="M5.5 13a3.5 3.5 0 01-.369-6.98 4 4 0 117.753-1.977A4.5 4.5 0 1113.5 13H11V9.414l-1.293 1.293a1 1 0 01-1.414-1.414l3-3a1 1 0 011.414 0l3 3a1 1 0 01-1.414 1.414L13 9.414V13H5.5z" />
-                         <path d="M9 13h2v5a1 1 0 11-2 0v-5z" />
-                       </svg>
-                       <span>อัปโหลดไฟล์</span>
-                    </button>
-                </div>
-                <div class="flex justify-between items-center mb-4">
-                    <h2 class="text-2xl font-semibold text-gray-700">รายชื่อครู</h2>
-                    <div class="flex items-center gap-4">
-                        <div id="teacherList-controls"></div>
-                        <button onclick="addTeacher()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg transition-colors">เพิ่มครู</button>
-                    </div>
-                </div>
-                <div class="border-b border-gray-200">
-                    <nav id="teacherList-dynamic-tabs" class="-mb-px flex flex-wrap gap-x-4 sm:gap-x-6" aria-label="Tabs"></nav>
-                </div>
-                <div id="teacherList-tables-container" class="mt-6"></div>
-            </div>
-
-            <!-- Course Registration View -->
-            <div id="courses-view" class="view-container">
-                 <!-- Moved Buttons Above Header -->
-                 <div class="flex justify-end items-center mb-4 gap-4">
-                    <button onclick="downloadCourseTemplate()" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg transition-colors flex items-center gap-2 text-sm">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                          <path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd" />
-                        </svg>
-                        <span>ตัวอย่าง ไฟล์รายวิชา</span>
-                    </button>
-                    <input type="file" id="course-upload-input" class="hidden" accept=".xlsx, .xls" onchange="handleCourseFileUpload(event)">
-                    <button onclick="document.getElementById('course-upload-input').click()" class="bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded-lg transition-colors flex items-center gap-2 text-sm">
-                       <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                         <path d="M5.5 13a3.5 3.5 0 01-.369-6.98 4 4 0 117.753-1.977A4.5 4.5 0 1113.5 13H11V9.414l-1.293 1.293a1 1 0 01-1.414-1.414l3-3a1 1 0 011.414 0l3 3a1 1 0 01-1.414 1.414L13 9.414V13H5.5z" />
-                         <path d="M9 13h2v5a1 1 0 11-2 0v-5z" />
-                       </svg>
-                       <span>อัปโหลดไฟล์</span>
-                    </button>
-                </div>
-                 <div class="flex justify-between items-center mb-4">
-                    <h2 class="text-2xl font-semibold text-gray-700">รายวิชา</h2>
-                     <div class="flex items-center gap-4">
-                        <div id="course-controls"></div>
-                    </div>
-                </div>
-                <div class="border-b border-gray-200">
-                    <nav id="course-dynamic-tabs" class="-mb-px flex flex-wrap gap-x-4 sm:gap-x-6" aria-label="Tabs"></nav>
-                </div>
-                <div id="course-tables-container" class="mt-6"></div>
-            </div>
-
-            <!-- Teaching Assignment View -->
-            <div id="teaching-view" class="view-container">
-                <div class="flex justify-between items-center mb-4">
-                    <h2 class="text-2xl font-semibold text-gray-700">ลงทะเบียนสอน</h2>
-                    <div id="teaching-controls" class="flex justify-end"></div>
-                </div>
-                <div class="border-b border-gray-200">
-                    <nav id="teaching-dynamic-tabs" class="-mb-px flex flex-wrap gap-x-4 sm:gap-x-6" aria-label="Tabs"></nav>
-                </div>
-                <div id="teaching-tables-container" class="mt-6"></div>
-            </div>
-
-            <!-- Teacher Summary View -->
-            <div id="teachers-view" class="view-container">
-                 <div class="flex justify-between items-center mb-4">
-                    <h2 class="text-2xl font-semibold text-gray-700">สรุปคาบสอน</h2>
-                    <div class="flex items-center gap-4">
-                        <div id="teacher-summary-controls" class="flex justify-end"></div>
-                    </div>
-                 </div>
-                 <div class="border-b border-gray-200">
-                    <nav id="teacher-dynamic-tabs" class="-mb-px" aria-label="Tabs"></nav>
-                </div>
-                <div id="teacher-tables-container" class="mt-6"></div>
-            </div>
-        </main>
-    </div>
-
-    <!-- Modals -->
-    <div id="teacher-selector-modal" class="fixed inset-0 z-50 flex items-center justify-center p-4 hidden modal-backdrop"></div>
-    <div id="notification"></div>
-
-    <script>
-        // --- DATA STORE ---
-        let courseTeachingViewMode = 'grade';
-        let teacherListViewMode = 'all';
-        let teacherSummaryViewMode = 'grade';
-        let modalSelectedTeacherIds = [];
-        const LEARNING_AREAS = ['01 ไทย', '02 คณิต', '03 วิทย์', '04 คอม', '05 สังคม', '06 พละ', '07 ศิลปะ', '08 การงาน', '09 ต่างประเทศ', '10 แนะแนว'];
-
-        let courseData = {
-            'm1': { name: 'ม. 1', courses: [
-                { id: 'ท21101', name: 'ภาษาไทย 1', periods: 3, credits: 1.5, rooms: [1,2,3,4,5,6], learningArea: '01 ไทย' },
-                { id: 'ค21101', name: 'คณิตศาสตร์ 1', periods: 3, credits: 1.5, rooms: [1,2,3,4,5,6], learningArea: '02 คณิต' },
-                { id: 'ว21101', name: 'วิทยาศาสตร์ 1', periods: 3, credits: 1.5, rooms: [1,2,3,4,5,6], learningArea: '03 วิทย์' },
-                { id: 'ส21101', name: 'สังคมศึกษา 1', periods: 2, credits: 1.0, rooms: [1,2,3,4,5,6], learningArea: '05 สังคม' },
-                { id: 'พ21101', name: 'สุขศึกษาและพลศึกษา 1', periods: 2, credits: 1.0, rooms: [1,2,3,4,5,6], learningArea: '06 พละ' },
-                { id: 'ศ21101', name: 'ศิลปะ 1', periods: 2, credits: 1.0, rooms: [1,2,3,4,5,6], learningArea: '07 ศิลปะ' },
-                { id: 'ง21101', name: 'การงานอาชีพ 1', periods: 2, credits: 1.0, rooms: [1,2,3,4,5,6], learningArea: '08 การงาน' },
-                { id: 'อ21101', name: 'ภาษาอังกฤษ 1', periods: 3, credits: 1.5, rooms: [1,2,3,4,5,6], learningArea: '09 ต่างประเทศ' },
-                { id: 'ว21103', name: 'วิทยาการคำนวณ 1', periods: 2, credits: 1.0, rooms: [1,2,3,4,5,6], learningArea: '04 คอม' },
-                { id: 'แ21101', name: 'แนะแนว 1', periods: 1, credits: 0.5, rooms: [1,2,3,4,5,6], learningArea: '10 แนะแนว' },
-            ]},
-            'm2': { name: 'ม. 2', courses: [
-                { id: 'ท22101', name: 'ภาษาไทย 3', periods: 3, credits: 1.5, rooms: [1,2,3,4,5], learningArea: '01 ไทย' },
-                { id: 'ค22101', name: 'คณิตศาสตร์ 3', periods: 3, credits: 1.5, rooms: [1,2,3,4,5], learningArea: '02 คณิต' },
-                { id: 'ว22101', name: 'วิทยาศาสตร์ 3', periods: 3, credits: 1.5, rooms: [1,2,3,4,5], learningArea: '03 วิทย์' },
-                { id: 'อ22101', name: 'ภาษาอังกฤษ 3', periods: 3, credits: 1.5, rooms: [1,2,3,4,5], learningArea: '09 ต่างประเทศ' },
-            ]},
-            'm3': { name: 'ม. 3', courses: [
-                { id: 'ท23101', name: 'ภาษาไทย 5', periods: 3, credits: 1.5, rooms: [1,2,3,4], learningArea: '01 ไทย' },
-                { id: 'ค23101', name: 'คณิตศาสตร์ 5', periods: 3, credits: 1.5, rooms: [1,2,3,4], learningArea: '02 คณิต' },
-                { id: 'ว23101', name: 'วิทยาศาสตร์ 5', periods: 3, credits: 1.5, rooms: [1,2,3,4], learningArea: '03 วิทย์' },
-                { id: 'อ23101', name: 'ภาษาอังกฤษ 5', periods: 3, credits: 1.5, rooms: [1,2,3,4], learningArea: '09 ต่างประเทศ' },
-            ]},
-            'm4': { name: 'ม. 4', courses: [
-                { id: 'ท31101', name: 'ภาษาไทยพื้นฐาน', periods: 2, credits: 1.0, rooms: [1,2,3,4,5,6,7,8], learningArea: '01 ไทย' },
-                { id: 'ค31101', name: 'คณิตศาสตร์พื้นฐาน', periods: 2, credits: 1.0, rooms: [1,2,3,4,5,6,7,8], learningArea: '02 คณิต' },
-                { id: 'ว30201', name: 'ฟิสิกส์ 1', periods: 3, credits: 1.5, rooms: [1,2,3], learningArea: '03 วิทย์' },
-                { id: 'ว30221', name: 'เคมี 1', periods: 3, credits: 1.5, rooms: [1,2,3], learningArea: '03 วิทย์' },
-                { id: 'ว30241', name: 'ชีววิทยา 1', periods: 3, credits: 1.5, rooms: [1,2,3], learningArea: '03 วิทย์' },
-                { id: 'อ31201', name: 'ภาษาอังกฤษอ่าน-เขียน 1', periods: 2, credits: 1.0, rooms: [4,5,6,7,8], learningArea: '09 ต่างประเทศ' },
-                { id: 'จ31201', name: 'ภาษาจีน 1', periods: 2, credits: 1.0, rooms: [4,5], learningArea: '09 ต่างประเทศ' },
-                { id: 'ศ31101', name: 'ดนตรีสากล', periods: 2, credits: 1.0, rooms: [6,7,8], learningArea: '07 ศิลปะ' },
-            ]},
-            'm5': { name: 'ม. 5', courses: [
-                { id: 'ท32101', name: 'หลักภาษาไทย', periods: 2, credits: 1.0, rooms: [1,2,3,4,5,6,7], learningArea: '01 ไทย' },
-                { id: 'ค32201', name: 'คณิตศาสตร์เพิ่มเติม 3', periods: 4, credits: 2.0, rooms: [1,2,3], learningArea: '02 คณิต' },
-                { id: 'ว30203', name: 'ฟิสิกส์ 3', periods: 3, credits: 1.5, rooms: [1,2,3], learningArea: '03 วิทย์' },
-                { id: 'ว30223', name: 'เคมี 3', periods: 3, credits: 1.5, rooms: [1,2,3], learningArea: '03 วิทย์' },
-                { id: 'ง32201', name: 'การเขียนโปรแกรม', periods: 3, credits: 1.5, rooms: [4,5,6,7], learningArea: '04 คอม' },
-            ]},
-            'm6': { name: 'ม. 6', courses: [
-                { id: 'ท33101', name: 'วรรณคดีวิจักษ์', periods: 2, credits: 1.0, rooms: [1,2,3,4,5,6], learningArea: '01 ไทย' },
-                { id: 'ค33201', name: 'คณิตศาสตร์เพิ่มเติม 5', periods: 4, credits: 2.0, rooms: [1,2,3], learningArea: '02 คณิต' },
-                { id: 'ส33102', name: 'กฎหมายน่ารู้', periods: 2, credits: 1.0, rooms: [1,2,3,4,5,6], learningArea: '05 สังคม' },
-                { id: 'อ33201', name: 'ภาษาอังกฤษเพื่อการศึกษาต่อ', periods: 2, credits: 1.0, rooms: [1,2,3,4,5,6], learningArea: '09 ต่างประเทศ' },
-            ]},
-        };
-
-        let teacherData = [
-            { id: 101, title: 'นาย', firstName: 'ครูภาษาไทย 01', lastName: 'ThaiTeacher 01', learningArea: '01 ไทย' }, { id: 102, title: 'นางสาว', firstName: 'ครูภาษาไทย 02', lastName: 'ThaiTeacher 02', learningArea: '01 ไทย' }, { id: 103, title: 'นาง', firstName: 'ครูภาษาไทย 03', lastName: 'ThaiTeacher 03', learningArea: '01 ไทย' }, { id: 104, title: 'นาย', firstName: 'ครูภาษาไทย 04', lastName: 'ThaiTeacher 04', learningArea: '01 ไทย' }, { id: 105, title: 'นางสาว', firstName: 'ครูภาษาไทย 05', lastName: 'ThaiTeacher 05', learningArea: '01 ไทย' },
-            { id: 201, title: 'นาย', firstName: 'ครูคณิตศาสตร์ 01', lastName: 'MathTeacher 01', learningArea: '02 คณิต' }, { id: 202, title: 'นางสาว', firstName: 'ครูคณิตศาสตร์ 02', lastName: 'MathTeacher 02', learningArea: '02 คณิต' }, { id: 203, title: 'นาย', firstName: 'ครูคณิตศาสตร์ 03', lastName: 'MathTeacher 03', learningArea: '02 คณิต' }, { id: 204, title: 'นาง', firstName: 'ครูคณิตศาสตร์ 04', lastName: 'MathTeacher 04', learningArea: '02 คณิต' }, { id: 205, title: 'นาย', firstName: 'ครูคณิตศาสตร์ 05', lastName: 'MathTeacher 05', learningArea: '02 คณิต' },
-            { id: 301, title: 'นาย', firstName: 'ครูวิทย์ 01', lastName: 'SciTeacher 01', learningArea: '03 วิทย์' }, { id: 302, title: 'นางสาว', firstName: 'ครูวิทย์ 02', lastName: 'SciTeacher 02', learningArea: '03 วิทย์' }, { id: 303, title: 'นาย', firstName: 'ครูวิทย์ 03', lastName: 'SciTeacher 03', learningArea: '03 วิทย์' }, { id: 304, title: 'นาง', firstName: 'ครูวิทย์ 04', lastName: 'SciTeacher 04', learningArea: '03 วิทย์' }, { id: 305, title: 'นาย', firstName: 'ครูวิทย์ 05', lastName: 'SciTeacher 05', learningArea: '03 วิทย์' },
-            { id: 901, title: 'นาย', firstName: 'ครูคอม 01', lastName: 'ComTeacher 01', learningArea: '04 คอม' }, { id: 902, title: 'นางสาว', firstName: 'ครูคอม 02', lastName: 'ComTeacher 02', learningArea: '04 คอม' }, { id: 903, title: 'นาย', firstName: 'ครูคอม 03', lastName: 'ComTeacher 03', learningArea: '04 คอม' }, { id: 904, title: 'นาง', firstName: 'ครูคอม 04', lastName: 'ComTeacher 04', learningArea: '04 คอม' }, { id: 905, title: 'นาย', firstName: 'ครูคอม 05', lastName: 'ComTeacher 05', learningArea: '04 คอม' },
-            { id: 401, title: 'นาย', firstName: 'ครูสังคม 01', lastName: 'SocialTeacher 01', learningArea: '05 สังคม' }, { id: 402, title: 'นางสาว', firstName: 'ครูสังคม 02', lastName: 'SocialTeacher 02', learningArea: '05 สังคม' }, { id: 403, title: 'นาย', firstName: 'ครูสังคม 03', lastName: 'SocialTeacher 03', learningArea: '05 สังคม' }, { id: 404, title: 'นาง', firstName: 'ครูสังคม 04', lastName: 'SocialTeacher 04', learningArea: '05 สังคม' }, { id: 405, title: 'นาย', firstName: 'ครูสังคม 05', lastName: 'SocialTeacher 05', learningArea: '05 สังคม' },
-            { id: 501, title: 'นาย', firstName: 'ครูพละ 01', lastName: 'PETeacher 01', learningArea: '06 พละ' }, { id: 502, title: 'นางสาว', firstName: 'ครูพละ 02', lastName: 'PETeacher 02', learningArea: '06 พละ' }, { id: 503, title: 'นาย', firstName: 'ครูพละ 03', lastName: 'PETeacher 03', learningArea: '06 พละ' }, { id: 504, title: 'นาง', firstName: 'ครูพละ 04', lastName: 'PETeacher 04', learningArea: '06 พละ' }, { id: 505, title: 'นาย', firstName: 'ครูพละ 05', lastName: 'PETeacher 05', learningArea: '06 พละ' },
-            { id: 601, title: 'นาย', firstName: 'ครูศิลปะ 01', lastName: 'ArtTeacher 01', learningArea: '07 ศิลปะ' }, { id: 602, title: 'นางสาว', firstName: 'ครูศิลปะ 02', lastName: 'ArtTeacher 02', learningArea: '07 ศิลปะ' }, { id: 603, title: 'นาย', firstName: 'ครูศิลปะ 03', lastName: 'ArtTeacher 03', learningArea: '07 ศิลปะ' }, { id: 604, title: 'นาง', firstName: 'ครูศิลปะ 04', lastName: 'ArtTeacher 04', learningArea: '07 ศิลปะ' }, { id: 605, title: 'นาย', firstName: 'ครูศิลปะ 05', lastName: 'ArtTeacher 05', learningArea: '07 ศิลปะ' },
-            { id: 701, title: 'นาย', firstName: 'ครูการงาน 01', lastName: 'WorkTeacher 01', learningArea: '08 การงาน' }, { id: 702, title: 'นางสาว', firstName: 'ครูการงาน 02', lastName: 'WorkTeacher 02', learningArea: '08 การงาน' }, { id: 703, title: 'นาย', firstName: 'ครูการงาน 03', lastName: 'WorkTeacher 03', learningArea: '08 การงาน' }, { id: 704, title: 'นาง', firstName: 'ครูการงาน 04', lastName: 'WorkTeacher 04', learningArea: '08 การงาน' }, { id: 705, title: 'นาย', firstName: 'ครูการงาน 05', lastName: 'WorkTeacher 05', learningArea: '08 การงาน' },
-            { id: 801, title: 'นาย', firstName: 'ครูอังกฤษ 01', lastName: 'EngTeacher 01', learningArea: '09 ต่างประเทศ' }, { id: 802, title: 'นางสาว', firstName: 'ครูอังกฤษ 02', lastName: 'EngTeacher 02', learningArea: '09 ต่างประเทศ' }, { id: 803, title: 'นาย', firstName: 'ครูจีน 01', lastName: 'ChineseTeacher 01', learningArea: '09 ต่างประเทศ' }, { id: 804, title: 'นาง', firstName: 'ครูญี่ปุ่น 01', lastName: 'JapanTeacher 01', learningArea: '09 ต่างประเทศ' }, { id: 805, title: 'นาย', firstName: 'ครูฝรั่งเศส 01', lastName: 'FrenchTeacher 01', learningArea: '09 ต่างประเทศ' },
-            { id: 1001, title: 'นาย', firstName: 'ครูแนะแนว 01', lastName: 'GuidanceTeacher 01', learningArea: '10 แนะแนว' }, { id: 1002, title: 'นางสาว', firstName: 'ครูแนะแนว 02', lastName: 'GuidanceTeacher 02', learningArea: '10 แนะแนว' }, { id: 1003, title: 'นาย', firstName: 'ครูแนะแนว 03', lastName: 'GuidanceTeacher 03', learningArea: '10 แนะแนว' }, { id: 1004, title: 'นาง', firstName: 'ครูแนะแนว 04', lastName: 'GuidanceTeacher 04', learningArea: '10 แนะแนว' }, { id: 1005, title: 'นาย', firstName: 'ครูแนะแนว 05', lastName: 'GuidanceTeacher 05', learningArea: '10 แนะแนว' },
-        ];
+        // --- Inline SVG Icons (Lucide React equivalents) ---
+        const IconX = (props) => (
+          <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-x">
+            <path d="M18 6 6 18" /><path d="M6 6 18 18" />
+          </svg>
+        );
+        const IconXCircle = (props) => (
+          <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-x-circle">
+            <circle cx="12" cy="12" r="10" /><path d="m15 9-6 6" /><path d="m9 9 6 6" />
+          </svg>
+        );
+        const IconUserPlus = (props) => (
+          <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucude-user-plus">
+            <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-2 4v2" /><circle cx="9" cy="7" r="4" /><line x1="19" x2="19" y1="8" y2="14" /><line x1="16" x2="22" y1="11" y2="11" />
+          </svg>
+        );
+        const IconCheckCircle = (props) => (
+          <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-check-circle">
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-8.62" /><path d="M10.5 12.5L14 16l8-8" />
+          </svg>
+        );
+        const IconZap = (props) => (
+          <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-zap">
+            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+          </svg>
+        );
+        const IconTrash2 = (props) => (
+          <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-trash-2">
+            <path d="M3 6h18" /><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" /><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" /><line x1="10" x2="10" y1="11" y2="17" /><line x1="14" x2="14" y1="11" y2="17" />
+          </svg>
+        );
+        const IconCalendar = (props) => (
+          <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-calendar">
+            <rect width="18" height="18" x="3" y="4" rx="2" ry="2" /><line x1="16" x2="16" y1="2" y2="6" /><line x1="8" x2="8" y1="2" y2="6" /><line x1="3" x2="21" y1="10" y2="10" />
+          </svg>
+        );
+        const IconFileDown = (props) => (
+          <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-file-down">
+            <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.4L15.6 2.5z" /><path d="M15 2v5a2 2 0 0 0 2 2h5" /><path d="M12 18V12" /><path d="M9 15l3 3 3-3" />
+          </svg>
+        );
+        const IconUpload = (props) => (
+          <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-upload">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" x2="12" y1="3" y2="15" />
+          </svg>
+        );
+        const IconInfo = (props) => (
+          <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-info">
+            <circle cx="12" cy="12" r="10" /><path d="M12 16v-4" /><path d="M12 8h.01" />
+          </svg>
+        );
         
-        let teachingAssignments = {
-            'ท21101_1': [101], 'ท21101_2': [101], 'ท21101_3': [102], 'ท21101_4': [102], 'ท21101_5': [103], 'ท21101_6': [103],
-            'ค21101_1': [201], 'ค21101_2': [201], 'ค21101_3': [202], 'ค21101_4': [202], 'ค21101_5': [203], 'ค21101_6': [203],
-            'ว21101_1': [301], 'ว21101_2': [301], 'ว21101_3': [302], 'ว21101_4': [302], 'ว21101_5': [303], 'ว21101_6': [303],
-            'ส21101_1': [401], 'ส21101_2': [401], 'ส21101_3': [402], 'ส21101_4': [402], 'ส21101_5': [401], 'ส21101_6': [402],
-            'พ21101_1': [501], 'พ21101_2': [502], 'พ21101_3': [501], 'พ21101_4': [502], 'พ21101_5': [501], 'พ21101_6': [502],
-            'ศ21101_1': [601], 'ศ21101_2': [601], 'ศ21101_3': [602], 'ศ21101_4': [602], 'ศ21101_5': [603], 'ศ21101_6': [603],
-            'ง21101_1': [701], 'ง21101_2': [701], 'ง21101_3': [702], 'ง21101_4': [702], 'ง21101_5': [701], 'ง21101_6': [702],
-            'อ21101_1': [801], 'อ21101_2': [801], 'อ21101_3': [802], 'อ21101_4': [802], 'อ21101_5': [801, 802], 'อ21101_6': [801, 802],
-            'ว21103_1': [901], 'ว21103_2': [901], 'ว21103_3': [902], 'ว21101_4': [902], 'ว21103_5': [903], 'ว21103_6': [903],
-            'แ21101_1': [1001], 'แ21101_2': [1001], 'แ21101_3': [1002], 'แ21101_4': [1002], 'แ21101_5': [1003], 'แ21101_6': [1003],
-            'ท31101_1': [104], 'ท31101_2': [104], 'ท31101_3': [104], 'ท31101_4': [105], 'ท31101_5': [105], 'ท31101_6': [105],
-            'ค31101_1': [204], 'ค31101_2': [204], 'ค31101_3': [204], 'ค31101_4': [205], 'ค31101_5': [205], 'ค31101_6': [205],
-            'ว30201_1': [304], 'ว30201_2': [304], 'ว30201_3': [305],
-            'ว30221_1': [304], 'ว30221_2': [304], 'ว30221_3': [305],
-            'จ31201_4': [803], 'จ31201_5': [803],
-            'ง32201_4': [904], 'ง32201_5': [904], 'ง32201_6': [905], 'ง32201_7': [905],
-        };
+        const App = () => {
+          // --- State Management ---
+          const [teachers, setTeachers] = useState([]);
+          const [schedule, setSchedule] = useState({});
+          const [absences, setAbsences] = useState([]);
+          const [isModalOpen, setIsModalOpen] = useState(false);
+          const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+          const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
+          const [isClearConfirmModalOpen, setIsClearConfirmModalOpen] = useState(false);
+          const [selectedAbsentSlot, setSelectedAbsentSlot] = useState(null);
+          const [message, setMessage] = useState({ type: '', text: '', subText: '', details: [], tab: '' });
+          const [selectedDayIndex, setSelectedDayIndex] = useState(0);
+          const [presentTeachersViewMode, setPresentTeachersViewMode] = useState('substitutes_first');
+          const [isAutoAssigning, setIsAutoAssigning] = useState(false);
+          const [isClearing, setIsClearing] = useState(false);
+          const [activeTab, setActiveTab] = useState('substitute');
+          
+          const [selectedTeacherToReportAbsence, setSelectedTeacherToReportAbsence] = useState('');
+          const [teacherAbsenceSearchQuery, setTeacherAbsenceSearchQuery] = useState('');
+          const [selectedSubstituteId, setSelectedSubstituteId] = useState('');
 
-        // --- INITIALIZATION ---
-        document.addEventListener('DOMContentLoaded', () => {
-            loadDataFromLocalStorage(); // Load saved data first
-            renderAllViews();
-        });
+          const [timetableSearchQuery, setTimetableSearchQuery] = useState('');
+          const [selectedTimetableTeacherId, setSelectedTimetableTeacherId] = useState('');
+          
+          const [importFile, setImportFile] = useState(null);
+          const [isImporting, setIsImporting] = useState(false);
+          
+          const [autoAssignSuccess, setAutoAssignSuccess] = useState(false);
+          const [clearDataSuccess, setClearDataSuccess] = useState(false);
+          const [importSuccess, setImportSuccess] = useState(false);
 
-        function renderAllViews() {
-            const activeTabs = getActiveTabs();
-            renderTeacherListView();
-            renderDynamicView('course');
-            renderDynamicView('teaching');
-            renderDynamicView('teacher');
-            restoreActiveTabs(activeTabs);
-        }
+          // --- Static Data ---
+          const dayNames = ['จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์'];
+          const totalPeriods = 10;
+          const periods = Array.from({ length: totalPeriods }, (_, i) => i + 1);
+          const classes = ['ม.1/1', 'ม.1/2', 'ม.2/1', 'ม.2/2', 'ม.3/1', 'ม.3/2', 'ม.4/1', 'ม.4/2', 'ม.5/1', 'ม.5/2', 'ม.6/1', 'ม.6/2'];
+          const subjects = ['คณิตศาสตร์', 'วิทยาศาสตร์', 'ภาษาไทย', 'สังคมศึกษา', 'ภาษาอังกฤษ', 'พลศึกษา', 'สุขศึกษา', 'คอมพิวเตอร์'];
+          const rooms = ['ห้อง 101', 'ห้อง 102', 'ห้อง 103', 'ห้อง 104', 'ห้อง 201', 'ห้อง 202', 'ห้อง 203', 'ห้อง 204', 'ห้อง 301', 'ห้อง 302'];
 
-        // --- DYNAMIC VIEW RENDERING ---
-        function renderDynamicView(viewPrefix) {
-            const controlsContainer = document.getElementById(`${viewPrefix}-controls`);
-            if (controlsContainer) {
-                controlsContainer.innerHTML = `
-                    <div class="flex bg-gray-200 rounded-lg p-1 text-sm">
-                        <button onclick="setCourseTeachingViewMode('grade')" class="view-mode-btn ${courseTeachingViewMode === 'grade' ? 'active' : ''} px-4 py-1 rounded-md font-medium" data-mode="grade">ระดับชั้น</button>
-                        <button onclick="setCourseTeachingViewMode('learningArea')" class="view-mode-btn ${courseTeachingViewMode === 'learningArea' ? 'active' : ''} px-4 py-1 rounded-md font-medium" data-mode="learningArea">กลุ่มสาระ</button>
-                    </div>`;
-            }
+          const defaultPeriodTimes = [
+            '08:30-09:20', '09:20-10:10', '10:10-11:00', '11:00-11:50',
+            '11:50-12:40', '12:40-13:30', '13:30-14:20', '14:20-15:10',
+            '15:10-16:00', '16:00-16:50'
+          ];
+          const [currentPeriodTimes, setCurrentPeriodTimes] = useState(defaultPeriodTimes);
 
-            if (viewPrefix === 'course' || viewPrefix === 'teaching') {
-                if (courseTeachingViewMode === 'grade') {
-                    renderCourseOrTeachingViewByGrade(viewPrefix);
-                } else {
-                    renderCourseOrTeachingViewByLearningArea(viewPrefix);
-                }
-            } else if (viewPrefix === 'teacher') {
-                 const summaryControls = document.getElementById('teacher-summary-controls');
-                 if(summaryControls) {
-                     summaryControls.innerHTML = `
-                        <div class="flex bg-gray-200 rounded-lg p-1 text-sm">
-                            <button onclick="setTeacherSummaryViewMode('grade')" class="view-mode-btn ${teacherSummaryViewMode === 'grade' ? 'active' : ''} px-4 py-1 rounded-md font-medium">ระดับชั้น</button>
-                            <button onclick="setTeacherSummaryViewMode('learningArea')" class="view-mode-btn ${teacherSummaryViewMode === 'learningArea' ? 'active' : ''} px-4 py-1 rounded-md font-medium">กลุ่มสาระ</button>
-                        </div>`;
-                 }
-                 if (teacherSummaryViewMode === 'grade') {
-                    renderTeacherSummaryByGrade();
-                } else {
-                    renderTeacherSummaryByLearningArea();
-                }
-            }
-        }
-        
-        // --- Teacher List View ---
-        function renderTeacherListView() {
-            const controlsContainer = document.getElementById('teacherList-controls');
-            controlsContainer.innerHTML = `
-                <div class="flex bg-gray-200 rounded-lg p-1 text-sm">
-                    <button onclick="setTeacherListViewMode('all')" class="view-mode-btn ${teacherListViewMode === 'all' ? 'active' : ''} px-4 py-1 rounded-md font-medium">ทั้งหมด</button>
-                    <button onclick="setTeacherListViewMode('learningArea')" class="view-mode-btn ${teacherListViewMode === 'learningArea' ? 'active' : ''} px-4 py-1 rounded-md font-medium">กลุ่มสาระ</button>
-                </div>`;
+          const generateMockSchedule = (teachersData) => {
+            const mockSchedule = {};
+            const allTeacherIds = teachersData.map(t => t.id);
+            allTeacherIds.forEach(id => (mockSchedule[id] = []));
 
-            if (teacherListViewMode === 'all') {
-                renderTeacherListAll();
-            } else {
-                renderTeacherListByArea();
-            }
-        }
-
-        function setTeacherListViewMode(mode) {
-            if (teacherListViewMode === mode) return;
-            teacherListViewMode = mode;
-            renderTeacherListView();
-        }
-
-        function renderTeacherListAll() {
-            const tabsContainer = document.getElementById('teacherList-dynamic-tabs');
-            const tablesContainer = document.getElementById('teacherList-tables-container');
-            tabsContainer.innerHTML = '';
-            tablesContainer.innerHTML = '';
-
-            const tableId = `teacherList_all_combined`;
-            tablesContainer.insertAdjacentHTML('beforeend', createTeacherListTableShell(tableId, true));
-            const tableBody = tablesContainer.querySelector(`#${tableId} tbody`);
-            
-            LEARNING_AREAS.forEach(area => {
-                const teachersInArea = teacherData.filter(t => t.learningArea === area);
-                if (teachersInArea.length === 0) return;
-
-                tableBody.innerHTML += `
-                    <tr class="bg-gray-100">
-                        <td colspan="5" class="px-6 py-2 text-md font-semibold text-gray-800">${area}</td>
-                    </tr>
-                `;
-                populateTeacherListTable(tableBody, teachersInArea);
-            });
-        }
-
-        function renderTeacherListByArea() {
-            const tabsContainer = document.getElementById('teacherList-dynamic-tabs');
-            const tablesContainer = document.getElementById('teacherList-tables-container');
-            tabsContainer.innerHTML = '';
-            tablesContainer.innerHTML = '';
-
-            LEARNING_AREAS.forEach(area => {
-                const teachersInArea = teacherData.filter(t => t.learningArea === area);
-                if (teachersInArea.length === 0) return;
-
-                const isActive = tabsContainer.innerHTML === '';
-                const areaId = area.replace(/\s+/g, '');
-                tabsContainer.innerHTML += `<button onclick="changeActiveTab(event)" data-target="teacherList_${areaId}" class="dynamic-tab ${isActive ? 'active' : ''} shrink-0 border-b-2 font-medium px-1 py-4 text-sm">${area}</button>`;
-
-                const tableId = `teacherList_${areaId}`;
-                tablesContainer.insertAdjacentHTML('beforeend', createTeacherListTableShell(tableId, isActive));
-                const tableBody = tablesContainer.querySelector(`#${tableId} tbody`);
-                populateTeacherListTable(tableBody, teachersInArea);
-            });
-        }
-
-        function populateTeacherListTable(tableBody, teachers) {
-            teachers.forEach(teacher => {
-                tableBody.innerHTML += `
-                    <tr class="hover:bg-gray-50">
-                        <td class="px-6 py-3 whitespace-nowrap text-sm text-gray-900 border-b border-gray-200 border-r">${teacher.id}</td>
-                        <td class="px-6 py-3 whitespace-nowrap text-sm text-gray-700 border-b border-gray-200 border-r">${teacher.title}</td>
-                        <td class="px-6 py-3 whitespace-nowrap text-sm text-gray-700 border-b border-gray-200 border-r">${teacher.firstName}</td>
-                        <td class="px-6 py-3 whitespace-nowrap text-sm text-gray-700 border-b border-gray-200 border-r">${teacher.lastName}</td>
-                        <td class="px-6 py-3 whitespace-nowrap text-sm text-gray-700 border-b border-gray-200">${teacher.learningArea}</td>
-                    </tr>
-                `;
-            });
-        }
-
-        function renderCourseOrTeachingViewByGrade(viewPrefix) {
-            const tabsContainer = document.getElementById(`${viewPrefix}-dynamic-tabs`);
-            const tablesContainer = document.getElementById(`${viewPrefix}-tables-container`);
-            tabsContainer.innerHTML = '';
-            tablesContainer.innerHTML = '';
-
-            Object.keys(courseData).forEach((gradeKey, index) => {
-                const isActive = index === 0;
-                tabsContainer.innerHTML += `<button onclick="changeActiveTab(event)" data-target="${viewPrefix}_${gradeKey}" class="dynamic-tab ${isActive ? 'active' : ''} shrink-0 border-b-2 font-medium px-1 py-4 text-sm">${courseData[gradeKey].name}</button>`;
-                
-                const tableId = `${viewPrefix}_${gradeKey}`;
-                tablesContainer.insertAdjacentHTML('beforeend', createCourseTableShell(tableId, isActive));
-                const tableBody = tablesContainer.querySelector(`#${tableId} tbody`);
-                const courses = courseData[gradeKey].courses;
-
-                populateCourseTableBody(tableBody, courses, viewPrefix);
-            });
-        }
-
-        function renderCourseOrTeachingViewByLearningArea(viewPrefix) {
-            const tabsContainer = document.getElementById(`${viewPrefix}-dynamic-tabs`);
-            const tablesContainer = document.getElementById(`${viewPrefix}-tables-container`);
-            tabsContainer.innerHTML = '';
-            tablesContainer.innerHTML = '';
-
-            const allCourses = Object.values(courseData).flatMap(grade => grade.courses);
-            
-            LEARNING_AREAS.forEach((area) => {
-                const coursesInArea = allCourses.filter(c => c.learningArea === area);
-                if (coursesInArea.length === 0) return;
-
-                const isActive = tabsContainer.innerHTML === '';
-                const areaId = area.replace(/\s+/g, '');
-                tabsContainer.innerHTML += `<button onclick="changeActiveTab(event)" data-target="${viewPrefix}_${areaId}" class="dynamic-tab ${isActive ? 'active' : ''} shrink-0 border-b-2 font-medium px-1 py-4 text-sm">${area}</button>`;
-
-                const tableId = `${viewPrefix}_${areaId}`;
-                tablesContainer.insertAdjacentHTML('beforeend', createCourseTableShell(tableId, isActive));
-                const tableBody = tablesContainer.querySelector(`#${tableId} tbody`);
-                populateCourseTableBody(tableBody, coursesInArea, viewPrefix);
-            });
-        }
-        
-        function populateCourseTableBody(tableBody, courses, viewPrefix) {
-            if (courses.length === 0) {
-                tableBody.innerHTML = `<tr><td colspan="20" class="text-center py-10 text-gray-500">ไม่มีข้อมูล</td></tr>`;
-                return;
-            }
-            courses.forEach(course => {
-                let roomCells = '';
-                const gradeKey = findGradeKeyByCourseId(course.id);
-                const gradeLevel = gradeKey ? `ม.${gradeKey.replace('m', '')}` : '-';
-
-                if (viewPrefix === 'course') {
-                    for (let i = 1; i <= 15; i++) {
-                        const hasCourse = course.rooms.includes(i);
-                        roomCells += `<td onclick="toggleRoom('${gradeKey}', '${course.id}', ${i})" class="room-cell px-2 py-3 text-center text-sm font-bold ${hasCourse ? 'text-green-600' : 'text-gray-300'} border-b border-r border-gray-200">${hasCourse ? '✓' : '—'}</td>`;
-                    }
-                } else { // teaching view
-                    for (let i = 1; i <= 15; i++) {
-                        if (course.rooms.includes(i)) {
-                            const assignmentKey = `${course.id}_${i}`;
-                            const teacherIds = teachingAssignments[assignmentKey] || [];
-                            let cellContent = '<span class="text-gray-500 italic">เลือกครู</span>';
-                            let title = 'คลิกเพื่อเลือกครู';
-                            if (teacherIds.length > 0) {
-                                const teacherFirstNames = getTeacherFirstNames(teacherIds);
-                                cellContent = teacherFirstNames.map(name => `<div class="whitespace-nowrap py-0.5">${name}</div>`).join('');
-                                title = getTeacherNames(teacherIds).join(', ');
-                            }
-                            roomCells += `<td onclick="openTeacherSelectorModal('${course.id}', ${i})" class="room-cell px-2 py-1 align-top text-xs text-indigo-700 font-semibold text-left border-b border-r border-gray-200" title="${title}">${cellContent}</td>`;
-                        } else {
-                            roomCells += `<td class="bg-gray-100 border-b border-r border-gray-200"></td>`;
-                        }
-                    }
-                }
-                tableBody.innerHTML += `
-                    <tr>
-                        <td class="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900 border-b border-r border-gray-200">${course.id}</td>
-                        <td class="px-6 py-3 text-sm text-gray-700 border-b border-r border-gray-200">${course.name}</td>
-                        <td class="px-3 py-3 text-center text-sm text-gray-700 border-b border-r border-gray-200">${course.periods}</td>
-                        <td class="px-3 py-3 text-center text-sm text-gray-700 border-b border-r border-gray-200">${course.credits}</td>
-                        <td class="px-3 py-3 text-center text-sm text-gray-700 border-b border-r border-gray-200">${gradeLevel}</td>
-                        ${roomCells}
-                    </tr>`;
-            });
-        }
-
-        // --- TEACHER SUMMARY VIEW ---
-        function classifyTeachersByGradeLevel() {
-            const classified = { m1: [], m2: [], m3: [], m4: [], m5: [], m6: [], 'm1-3': [], 'm4-6': [], 'm1-6': [] };
-            const teacherGrades = {}; // { teacherId: Set('m1', 'm4') }
-
-            // 1. Map all grades taught by each teacher
-            Object.entries(teachingAssignments).forEach(([key, teacherIds]) => {
-                const [courseId] = key.split('_');
-                const gradeKey = findGradeKeyByCourseId(courseId);
-                if (gradeKey) {
-                    teacherIds.forEach(id => {
-                        if (!teacherGrades[id]) {
-                            teacherGrades[id] = new Set();
-                        }
-                        teacherGrades[id].add(gradeKey);
+            dayNames.forEach((_, dayIndex) => {
+              allTeacherIds.forEach(teacherId => {
+                const teacherSubjects = teachersData.find(t => t.id === teacherId).subjectsCanTeach;
+                const assignedPeriods = new Set();
+                while (assignedPeriods.size < 5) { // Assign 5 periods for 10 total
+                  const randomPeriod = Math.floor(Math.random() * totalPeriods);
+                  if (!assignedPeriods.has(randomPeriod)) {
+                    assignedPeriods.add(randomPeriod);
+                    const subject = teacherSubjects[Math.floor(Math.random() * teacherSubjects.length)];
+                    const randomClass = classes[Math.floor(Math.random() * classes.length)];
+                    const randomRoom = rooms[Math.floor(Math.random() * rooms.length)];
+                    mockSchedule[teacherId].push({
+                      dayIndex,
+                      periodIndex: randomPeriod,
+                      class: randomClass,
+                      subject,
+                      room: randomRoom,
+                      time: defaultPeriodTimes[randomPeriod],
+                      isAbsent: false,
+                      substituteId: null,
                     });
+                  }
                 }
+              });
             });
+            return mockSchedule;
+          };
 
-            // 2. Classify each teacher based on their set of grades
-            Object.entries(teacherGrades).forEach(([teacherId, gradesSet]) => {
-                const teacherIdNum = parseInt(teacherId);
-                const grades = Array.from(gradesSet);
-                const numGrades = grades.length;
-                const teachesLower = grades.some(g => ['m1', 'm2', 'm3'].includes(g));
-                const teachesUpper = grades.some(g => ['m4', 'm5', 'm6'].includes(g));
-
-                if (teachesLower && teachesUpper) {
-                    classified['m1-6'].push(teacherIdNum);
-                } else if (numGrades === 1) {
-                    classified[grades[0]].push(teacherIdNum);
-                } else if (teachesLower && numGrades > 1) {
-                    classified['m1-3'].push(teacherIdNum);
-                } else if (teachesUpper && numGrades > 1) {
-                    classified['m4-6'].push(teacherIdNum);
+          // --- Load Data from LocalStorage on Initial Mount ---
+          useEffect(() => {
+            console.log("Attempting to load data from localStorage...");
+            const savedData = localStorage.getItem('substituteAppData');
+            if (savedData) {
+                try {
+                    const parsedData = JSON.parse(savedData);
+                    if (parsedData.teachers && parsedData.schedule && parsedData.absences && parsedData.currentPeriodTimes) {
+                        setTeachers(parsedData.teachers);
+                        setSchedule(parsedData.schedule);
+                        setAbsences(parsedData.absences);
+                        setCurrentPeriodTimes(parsedData.currentPeriodTimes);
+                        console.log("Data loaded successfully from localStorage.");
+                        return; // Exit if data is loaded
+                    }
+                } catch (error) {
+                    console.error("Failed to parse data from localStorage", error);
                 }
-            });
-            return classified;
-        }
-
-        function renderTeacherSummaryByGrade() {
-            const tabsContainer = document.getElementById('teacher-dynamic-tabs');
-            const tablesContainer = document.getElementById('teacher-tables-container');
-            tabsContainer.innerHTML = '';
-            tablesContainer.innerHTML = '';
-
-            const classifiedTeachers = classifyTeachersByGradeLevel();
-
-            const tabLayout = [
-                [
-                    { key: 'm1', label: 'ม.1' }, { key: 'm2', label: 'ม.2' }, { key: 'm3', label: 'ม.3' },
-                    { key: 'm4', label: 'ม.4' }, { key: 'm5', label: 'ม.5' }, { key: 'm6', label: 'ม.6' }
-                ],
-                [
-                    { key: 'm1-3', label: '[ม.1,2,3]' }, { key: 'm4-6', label: '[ม.4,5,6]' }, { key: 'm1-6', label: '[ม.1-6]' }
-                ]
-            ];
-
-            const firstActiveTabKey = 'm1';
-            let tabsHtml = '<div class="flex flex-col gap-2 w-full">';
-
-            // Render all tabs unconditionally
-            tabLayout.forEach(row => {
-                tabsHtml += '<div class="flex flex-wrap gap-x-4 sm:gap-x-6">';
-                row.forEach(tab => {
-                    const isActive = tab.key === firstActiveTabKey;
-                    tabsHtml += `<button onclick="changeActiveTab(event)" data-target="teacher_${tab.key}" class="dynamic-tab ${isActive ? 'active' : ''} shrink-0 border-b-2 font-medium px-1 py-4 text-sm">${tab.label}</button>`;
-                });
-                tabsHtml += '</div>';
-            });
-            tabsHtml += '</div>';
-            tabsContainer.innerHTML = tabsHtml;
-
-            // Render all table shells unconditionally
-            const allTabKeys = tabLayout.flat().map(t => t.key);
-            allTabKeys.forEach(key => {
-                const teachersInGroup = classifiedTeachers[key] || [];
-                const isActive = key === firstActiveTabKey;
-                const tableId = `teacher_${key}`;
-                tablesContainer.insertAdjacentHTML('beforeend', createTeacherTableShell(tableId, isActive));
-                const tableBody = tablesContainer.querySelector(`#${tableId} tbody`);
-                populateTeacherSummaryTable(tableBody, teachersInGroup, {});
-            });
-        }
-
-        function renderTeacherSummaryByLearningArea() {
-            const tabsContainer = document.getElementById('teacher-dynamic-tabs');
-            const tablesContainer = document.getElementById('teacher-tables-container');
-            tabsContainer.innerHTML = '';
-            tablesContainer.innerHTML = '';
-
-            let tabsHtml = '<div class="flex flex-wrap gap-x-4 sm:gap-x-6">';
-            const firstActiveAreaId = LEARNING_AREAS.length > 0 ? LEARNING_AREAS[0].replace(/\s+/g, '') : '';
-
-            LEARNING_AREAS.forEach(area => {
-                const teachersInArea = getTeachersForLearningArea(area);
-                const areaId = area.replace(/\s+/g, '');
-                const isActive = areaId === firstActiveAreaId;
-                
-                // Render tab
-                tabsHtml += `<button onclick="changeActiveTab(event)" data-target="teacher_${areaId}" class="dynamic-tab ${isActive ? 'active' : ''} shrink-0 border-b-2 font-medium px-1 py-4 text-sm">${area}</button>`;
-
-                // Render table shell
-                const tableId = `teacher_${areaId}`;
-                tablesContainer.insertAdjacentHTML('beforeend', createTeacherTableShell(tableId, isActive));
-                const tableBody = tablesContainer.querySelector(`#${tableId} tbody`);
-                populateTeacherSummaryTable(tableBody, teachersInArea, { area: area });
-            });
-            
-            tabsHtml += '</div>';
-            tabsContainer.innerHTML = tabsHtml;
-        }
-
-
-        function populateTeacherSummaryTable(tableBody, teacherIds, context) {
-            tableBody.innerHTML = '';
-            if (teacherIds.length === 0) {
-                tableBody.innerHTML = `<tr><td colspan="6" class="text-center py-10 text-gray-500">ไม่มีข้อมูลสำหรับแท็บนี้</td></tr>`;
-                return;
             }
-            const teachers = teacherData.filter(t => teacherIds.includes(t.id));
+
+            // If no saved data, initialize with mock data
+            console.log("No valid saved data found. Initializing mock data...");
+            const mockTeachers = [...Array(30)].map((_, i) => ({
+              id: `T${i + 1}`,
+              name: `ครู${String.fromCharCode(65 + i)}`,
+              subjectsCanTeach: subjects.slice(i % 3, i % 3 + 2),
+            }));
+            
+            const mockSchedule = generateMockSchedule(mockTeachers);
+            setTeachers(mockTeachers);
+            setSchedule(mockSchedule);
+            setCurrentPeriodTimes(defaultPeriodTimes);
+            console.log("Mock data initialized.");
+          }, []);
+
+          // --- Autosave Data to LocalStorage on Change ---
+          useEffect(() => {
+              // Don't save if teachers array is empty (initial state before loading/mocking)
+              if (teachers.length > 0) {
+                  console.log("Saving data to localStorage...");
+                  const dataToSave = {
+                      teachers,
+                      schedule,
+                      absences,
+                      currentPeriodTimes,
+                  };
+                  localStorage.setItem('substituteAppData', JSON.stringify(dataToSave));
+              }
+          }, [teachers, schedule, absences, currentPeriodTimes]);
+
+          // --- Helper Functions ---
+          const getTeacherName = (id) => teachers.find(t => t.id === id)?.name || 'ไม่ระบุ';
+
+          const getSlot = (teacherId, dayIndex, periodIndex) => {
+            const teacherSchedule = schedule[teacherId] || [];
+            return teacherSchedule.find(s => s.dayIndex === dayIndex && s.periodIndex === periodIndex);
+          };
+
+          const getSlotClass = (teacherId, dayIndex, periodIndex) => {
+            const slot = getSlot(teacherId, dayIndex, periodIndex);
+            if (!slot) return 'bg-gray-50';
+            
+            const absence = absences.find(abs => 
+              abs.teacherId === teacherId && abs.dayIndex === dayIndex && abs.periodIndex === periodIndex
+            );
+            
+            if (absence && absence.substituteId) return 'bg-green-100 text-green-800 cursor-pointer';
+            if (absence && !absence.substituteId) return 'bg-red-100 text-red-800 cursor-pointer';
+            
+            if(slot.subject === '.') return 'bg-gray-200 text-gray-500';
+            return 'bg-white';
+          };
+
+          const getAvailableSubstitutes = (absentSlot, currentAbsences) => {
+            if (!absentSlot || !schedule) return [];
+
+            const dayIndex = absentSlot.dayIndex;
+
+            const absentTeachersForDay = new Set(
+                currentAbsences
+                    .filter(abs => abs.dayIndex === dayIndex)
+                    .map(abs => abs.teacherId)
+            );
+
+            const busyTeachersAtSlot = new Set();
+            for (const teacherId in schedule) {
+                const teacherSlots = schedule[teacherId] || [];
+                const isBusy = teacherSlots.some(slot =>
+                    slot.dayIndex === dayIndex &&
+                    slot.periodIndex === absentSlot.periodIndex
+                );
+                if (isBusy) {
+                    busyTeachersAtSlot.add(teacherId);
+                }
+            }
+
+            const alreadyAssignedSubstitutes = new Set();
+            currentAbsences.forEach(absence => {
+              if (absence.dayIndex === dayIndex &&
+                  absence.periodIndex === absentSlot.periodIndex &&
+                  absence.substituteId) {
+                alreadyAssignedSubstitutes.add(absence.substituteId);
+              }
+            });
+
+            const allUnavailableTeachers = new Set([
+                ...absentTeachersForDay,
+                ...busyTeachersAtSlot,
+                ...alreadyAssignedSubstitutes,
+                absentSlot.teacherId
+            ]);
+
+            return teachers.filter(teacher =>
+              !allUnavailableTeachers.has(teacher.id)
+            );
+          };
+          
+          // --- Event Handlers ---
+          const handleToggleAbsence = (teacherId) => {
+            if (!teacherId) return;
+
+            const teacherSlots = schedule[teacherId] || [];
+            const slotsToReport = teacherSlots.filter(s => s.dayIndex === selectedDayIndex && s.subject !== '.');
+            
+            if (slotsToReport.length === 0) {
+              setMessage({ type: 'error', text: `ไม่พบตารางสอนของ ${getTeacherName(teacherId)} ในวันนี้`, tab: activeTab });
+              return;
+            }
+
+            const isAbsent = absences.some(abs => abs.teacherId === teacherId && abs.dayIndex === selectedDayIndex);
+
+            if (isAbsent) {
+                setAbsences(prev => prev.filter(abs => !(abs.teacherId === teacherId && abs.dayIndex === selectedDayIndex)));
+                setMessage({ type: 'success', text: `ยกเลิกการลาหยุดของครู ${getTeacherName(teacherId)} สำเร็จ`, tab: activeTab });
+            } else {
+                const newAbsences = slotsToReport.map(slot => {
+                    const absenceId = `${teacherId}-${slot.dayIndex}-${slot.periodIndex}`;
+                    return {
+                        id: absenceId,
+                        teacherId,
+                        ...slot,
+                        substituteId: null,
+                    };
+                });
+                setAbsences(prev => [...prev, ...newAbsences]);
+                setMessage({ type: 'success', text: `แจ้งการลาหยุดของครู ${getTeacherName(teacherId)} สำเร็จ`, tab: activeTab });
+            }
+          };
+          
+          const handleTeacherSelectionChange = (e) => {
+            const teacherId = e.target.value;
+            if (teacherId) {
+              setSelectedTeacherToReportAbsence(teacherId);
+              setIsConfirmModalOpen(true);
+            }
+          };
+          
+          const handleRemoveAbsence = (teacherId) => {
+              setAbsences(prev => prev.filter(abs => !(abs.teacherId === teacherId && abs.dayIndex === selectedDayIndex)));
+              setMessage({ type: 'success', text: `ยกเลิกการลาของครู ${getTeacherName(teacherId)} เรียบร้อยแล้ว`, tab: 'substitute' });
+          };
+
+          const confirmAbsenceAction = () => {
+            handleToggleAbsence(selectedTeacherToReportAbsence);
+            setIsConfirmModalOpen(false);
+            setSelectedTeacherToReportAbsence('');
+            setTeacherAbsenceSearchQuery('');
+          };
+
+          const cancelAbsenceAction = () => {
+            setIsConfirmModalOpen(false);
+            setSelectedTeacherToReportAbsence('');
+            setTeacherAbsenceSearchQuery('');
+          };
+          
+          const handleCellClick = (teacherId, dayIndex, periodIndex) => {
+            const slot = getSlot(teacherId, dayIndex, periodIndex);
+            const absence = absences.find(abs => 
+              abs.teacherId === teacherId && abs.dayIndex === dayIndex && abs.periodIndex === periodIndex
+            );
+            if (slot && absence) { 
+              setSelectedAbsentSlot({ ...absence });
+              setSelectedSubstituteId(absence.substituteId || ''); 
+              setIsModalOpen(true);
+            }
+          };
+
+          const assignSubstitute = (substituteId) => {
+            if (!selectedAbsentSlot || !substituteId) return;
+            setAbsences(prev => prev.map(abs => 
+                abs.id === selectedAbsentSlot.id ? { ...abs, substituteId: substituteId } : abs
+            ));
+            setMessage({ type: 'success', text: `มอบหมายครูสอนแทนสำเร็จ: ${getTeacherName(substituteId)} จะมาสอนแทนครู ${getTeacherName(selectedAbsentSlot.teacherId)}`, tab: activeTab });
+            setIsModalOpen(false);
+          };
+
+          const cancelSubstitute = () => {
+            if (!selectedAbsentSlot) return;
+            setAbsences(prev => prev.map(abs => 
+                abs.id === selectedAbsentSlot.id ? { ...abs, substituteId: null } : abs
+            ));
+            setMessage({ type: 'success', text: `ยกเลิกครูสอนแทนสำเร็จสำหรับครู ${getTeacherName(selectedAbsentSlot.teacherId)}`, tab: activeTab });
+            setIsModalOpen(false);
+          };
+
+          const handleClearAllData = () => {
+            setIsClearing(true);
+            // Clear data from localStorage
+            localStorage.removeItem('substituteAppData');
+
+            // Reset state back to the initial mock data
+            const mockTeachers = [...Array(30)].map((_, i) => ({
+              id: `T${i + 1}`,
+              name: `ครู${String.fromCharCode(65 + i)}`,
+              subjectsCanTeach: subjects.slice(i % 3, i % 3 + 2),
+            }));
+            const mockSchedule = generateMockSchedule(mockTeachers);
+            setTeachers(mockTeachers);
+            setSchedule(mockSchedule);
+            setAbsences([]);
+            setCurrentPeriodTimes(defaultPeriodTimes);
+
+            // Provide user feedback
+            setMessage({ type: 'success', text: 'ล้างข้อมูลทั้งหมดและเริ่มใหม่ด้วยข้อมูลเริ่มต้นสำเร็จ', tab: activeTab });
+            setIsClearConfirmModalOpen(false);
+            setClearDataSuccess(true);
+            setTimeout(() => {
+                setClearDataSuccess(false);
+                setIsClearing(false);
+            }, 2000);
+          };
+
+          const handleAutoAssignSubstitutes = () => {
+              if (isAutoAssigning) return;
+              setIsAutoAssigning(true);
+
+              let unassignedSlots = absences
+                  .filter(abs => abs.dayIndex === selectedDayIndex && !abs.substituteId)
+                  .sort((a, b) => a.periodIndex - b.periodIndex);
+
+              if (unassignedSlots.length === 0) {
+                  setMessage({ type: 'info', text: 'ไม่พบคาบเรียนที่ขาดสอนที่ยังไม่ได้จัดครูสอนแทน', tab: activeTab });
+                  setIsAutoAssigning(false);
+                  return;
+              }
+              
+              let tempAbsences = JSON.parse(JSON.stringify(absences));
+              const assignedSubSubjects = {};
+              
+              tempAbsences.forEach(abs => {
+                if (abs.substituteId && abs.dayIndex === selectedDayIndex) {
+                  if (!assignedSubSubjects[abs.substituteId]) {
+                    assignedSubSubjects[abs.substituteId] = abs.subject;
+                  }
+                }
+              });
+
+              const assignSlot = (slot, localAbsences, ignoreWorkload = false) => {
+                  let availableSubs = getAvailableSubstitutes(slot, localAbsences);
+                  
+                  availableSubs = availableSubs.filter(sub => {
+                      const lockedSubject = assignedSubSubjects[sub.id];
+                      return !lockedSubject || lockedSubject === slot.subject;
+                  });
+
+                  if (availableSubs.length === 0) return null;
+
+                  const dailyWorkload = {};
+                  teachers.forEach(teacher => {
+                    const scheduledPeriods = (schedule[teacher.id] || []).filter(s => s.dayIndex === selectedDayIndex && s.subject !== '.').length;
+                    const substitutePeriods = localAbsences.filter(a => a.substituteId === teacher.id && a.dayIndex === selectedDayIndex).length;
+                    dailyWorkload[teacher.id] = scheduledPeriods + substitutePeriods;
+                  });
+
+                  if (!ignoreWorkload) {
+                    availableSubs.sort((a, b) => (dailyWorkload[a.id] || 0) - (dailyWorkload[b.id] || 0));
+                  }
+                  
+                  return availableSubs[0];
+              };
+
+              let stillUnassigned = [];
+              for (const slot of unassignedSlots) {
+                  const bestSub = assignSlot(slot, tempAbsences);
+                  if (bestSub) {
+                      const absenceInTemp = tempAbsences.find(a => a.id === slot.id);
+                      absenceInTemp.substituteId = bestSub.id;
+                      if (!assignedSubSubjects[bestSub.id]) {
+                          assignedSubSubjects[bestSub.id] = slot.subject;
+                      }
+                  } else {
+                      stillUnassigned.push(slot);
+                  }
+              }
+
+              if (stillUnassigned.length > 0) {
+                  for (const slot of stillUnassigned) {
+                      const bestSub = assignSlot(slot, tempAbsences, true);
+                       if (bestSub) {
+                          const absenceInTemp = tempAbsences.find(a => a.id === slot.id);
+                          absenceInTemp.substituteId = bestSub.id;
+                          if (!assignedSubSubjects[bestSub.id]) {
+                              assignedSubSubjects[bestSub.id] = slot.subject;
+                          }
+                      }
+                  }
+              }
+              
+              setAbsences(tempAbsences);
+              
+              setAutoAssignSuccess(true);
+              setTimeout(() => setAutoAssignSuccess(false), 2500);
+
+              const remainingUnassignedCount = tempAbsences.filter(abs => abs.dayIndex === selectedDayIndex && !abs.substituteId).length;
+
+              if (remainingUnassignedCount > 0) {
+                  setMessage({ type: 'success', text: `[สำเร็จ] จัดสอนแทนอัตโนมัติแล้ว`, subText: `เหลือ ${remainingUnassignedCount} คาบ\nเลือกที่คาบสีแดง เพื่อเลือกครูเข้าสอนแทน`, tab: activeTab });
+              } else {
+                  setMessage({ type: 'success', text: 'จัดสอนแทนอัตโนมัติ [ สำเร็จ ]', tab: activeTab });
+              }
+              setIsAutoAssigning(false);
+          };
+
+          const handleExportToExcel = () => {
+            const allScheduleSlots = Object.values(schedule).flat();
+            if (allScheduleSlots.length === 0) {
+              setMessage({ type: 'info', text: 'ไม่พบข้อมูลตารางสอนที่จะส่งออก กรุณารอสักครู่เพื่อให้ข้อมูลโหลดสมบูรณ์', tab: activeTab });
+              return;
+            }
+
+            const csvRows = [];
+            const headers = ["รหัสครู", "ชื่อครู", "วัน", "คาบที่", "เวลา", "วิชา", "ห้อง", "ห้องเรียน"];
+            csvRows.push(headers.map(h => `"${h}"`).join(','));
 
             teachers.forEach(teacher => {
-                let allAssignments = getGroupedAssignmentsForTeacher(teacher.id);
-                let filteredAssignments = allAssignments;
-
-                // Context filtering is still useful for the 'learningArea' view
-                if (context.area) {
-                    filteredAssignments = allAssignments.filter(assign => {
-                        const course = findCourseById(assign.courseId);
-                        return course && course.learningArea === context.area;
-                    });
-                }
-                
-                if (filteredAssignments.length === 0) return;
-
-                const rowCount = filteredAssignments.length;
-                let totalPeriods = 0;
-                filteredAssignments.forEach(assign => {
-                    const course = findCourseById(assign.courseId);
-                    if (course) totalPeriods += course.periods * assign.rooms.length;
-                });
-
-                filteredAssignments.forEach((assign, index) => {
-                    const isFirstRow = index === 0;
-                    const roomText = `${assign.grade}/${assign.rooms.join(', ')}`;
-                    tableBody.innerHTML += `
-                        <tr class="hover:bg-gray-50">
-                            ${isFirstRow ? `<td rowspan="${rowCount}" class="px-6 py-3 align-top border-b border-gray-200 border-r"><div class="text-sm font-medium text-gray-900">${getTeacherFullName(teacher.id)}</div></td>` : ''}
-                            <td class="px-6 py-3 text-sm text-gray-700 border-b border-gray-200 border-r">${assign.courseId}</td>
-                            <td class="px-6 py-3 text-sm text-gray-700 border-b border-gray-200 border-r">${assign.courseName}</td>
-                            <td class="px-3 py-3 text-center text-sm text-gray-700 border-b border-gray-200 border-r">${assign.periods}</td>
-                            <td class="px-6 py-3 text-sm text-gray-700 border-b border-gray-200 border-r">${roomText}</td>
-                            ${isFirstRow ? `<td rowspan="${rowCount}" class="px-6 py-3 text-center align-top border-b border-gray-200 text-sm font-semibold text-indigo-800">${totalPeriods}</td>` : ''}
-                        </tr>`;
-                });
+              const teacherSchedule = schedule[teacher.id] || [];
+              teacherSchedule.sort((a, b) => a.dayIndex - b.dayIndex || a.periodIndex - b.periodIndex);
+              
+              teacherSchedule.forEach(slot => {
+                const row = [
+                  `"${teacher.id}"`,
+                  `"${teacher.name}"`,
+                  `"${dayNames[slot.dayIndex]}"`,
+                  `"${slot.periodIndex + 1}"`,
+                  `"${slot.time || currentPeriodTimes[slot.periodIndex]}"`,
+                  `"${slot.subject}"`,
+                  `"${slot.class}"`,
+                  `"${slot.room}"`
+                ];
+                csvRows.push(row.join(','));
+              });
             });
-        }
-        
-        // --- EVENT HANDLERS & LOGIC ---
-        function setCourseTeachingViewMode(mode) {
-            if (courseTeachingViewMode === mode) return;
-            courseTeachingViewMode = mode;
-            renderAllViews();
-        }
 
-        function setTeacherSummaryViewMode(mode) {
-            if (teacherSummaryViewMode === mode) return;
-            teacherSummaryViewMode = mode;
-            renderAllViews();
-        }
-
-        function updateAndRender(updateLogic) {
-            const activeTabs = getActiveTabs();
-            updateLogic();
-            renderAllViews();
-            restoreActiveTabs(activeTabs);
-            saveDataToLocalStorage(); // <-- SAVE DATA ON EVERY UPDATE
-        }
-
-        function toggleRoom(gradeKey, courseId, roomNumber) {
-            updateAndRender(() => {
-                const course = courseData[gradeKey].courses.find(c => c.id === courseId);
-                if (!course) return;
-                const roomIndex = course.rooms.indexOf(roomNumber);
-                if (roomIndex > -1) {
-                    course.rooms.splice(roomIndex, 1);
-                    delete teachingAssignments[`${courseId}_${roomNumber}`];
-                } else {
-                    course.rooms.push(roomNumber);
-                    course.rooms.sort((a, b) => a - b);
-                }
-            });
-        }
-        
-        function addTeacher() {
-            const title = prompt("คำนำหน้า (นาย, นาง, นางสาว):");
-            if (!title) return;
-            const firstName = prompt("ชื่อ:");
-            if (!firstName) return;
-            const lastName = prompt("สกุล:");
-            if (!lastName) return;
-            const learningArea = prompt("กลุ่มสาระ:", LEARNING_AREAS.join(', '));
-            if (!learningArea || !LEARNING_AREAS.includes(learningArea)) {
-                alert("กลุ่มสาระไม่ถูกต้อง");
-                return;
-            }
-            updateAndRender(() => {
-                teacherData.push({ id: Date.now(), title, firstName, lastName, learningArea });
-            });
-        }
-
-        function deleteTeacher(teacherId) {
-            const teacher = teacherData.find(t => t.id === teacherId);
-            if (confirm(`คุณแน่ใจหรือไม่ว่าต้องการลบ "${getTeacherFullName(teacherId)}"?`)) {
-                updateAndRender(() => {
-                    teacherData = teacherData.filter(t => t.id !== teacherId);
-                    Object.keys(teachingAssignments).forEach(key => {
-                        const teacherIds = teachingAssignments[key] || [];
-                        const index = teacherIds.indexOf(teacherId);
-                        if (index > -1) teacherIds.splice(index, 1);
-                    });
-                });
-            }
-        }
-
-        function openTeacherSelectorModal(courseId, roomNumber) {
-            currentAssignmentContext = { courseId, roomNumber };
-            const modal = document.getElementById('teacher-selector-modal');
-            const course = findCourseById(courseId);
-            const assignmentKey = `${courseId}_${roomNumber}`;
-            modalSelectedTeacherIds = teachingAssignments[assignmentKey] || [];
-
-            let teacherCheckboxes = teacherData.map(teacher => `
-                <label class="flex items-center p-2 rounded-md hover:bg-gray-100 cursor-pointer">
-                    <input type="checkbox" value="${teacher.id}" class="h-5 w-5 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500" ${modalSelectedTeacherIds.includes(teacher.id) ? 'checked' : ''}>
-                    <span class="ml-3 text-sm text-gray-800">${getTeacherFullName(teacher.id)}</span>
-                </label>
-            `).join('');
-
-            modal.innerHTML = `
-                <div class="bg-white rounded-lg shadow-xl w-full max-w-lg transform transition-all">
-                    <div class="p-6">
-                        <div class="flex justify-between items-start">
-                            <h3 class="text-lg font-semibold text-gray-800">เลือกครูผู้สอน</h3>
-                            <button onclick="closeModal('teacher-selector-modal')" class="text-gray-400 hover:text-gray-600 text-3xl leading-none">&times;</button>
-                        </div>
-                        <p class="text-sm text-gray-600 mt-1">วิชา: ${course.name} (ห้อง ${roomNumber})</p>
-                        
-                        <!-- Filter Controls -->
-                        <div class="grid grid-cols-2 gap-4 mt-4 pt-4 border-t">
-                            <div>
-                                <label for="teacher-filter-area" class="block text-sm font-medium text-gray-700">กลุ่มสาระ</label>
-                                <select id="teacher-filter-area" oninput="filterAndRenderTeacherList()" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md">
-                                    <option value="all">ทั้งหมด</option>
-                                    ${LEARNING_AREAS.map(area => `<option value="${area}">${area}</option>`).join('')}
-                                </select>
-                            </div>
-                            <div>
-                                <label for="teacher-search-input" class="block text-sm font-medium text-gray-700">ค้นหาชื่อ</label>
-                                <input type="text" id="teacher-search-input" oninput="filterAndRenderTeacherList()" placeholder="พิมพ์ชื่อ..." class="mt-1 block w-full border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md">
-                            </div>
-                        </div>
-
-                        <div id="teacher-checkbox-list" class="mt-4 max-h-60 overflow-y-auto space-y-1 pr-2 border-t border-b py-2"></div>
-                        <p id="modal-hint" class="text-xs text-gray-500 mt-2 h-4">เลือกได้สูงสุด 5 คน</p>
-                        <div class="mt-4 flex justify-end space-x-3">
-                            <button onclick="closeModal('teacher-selector-modal')" class="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300">ยกเลิก</button>
-                            <button onclick="saveTeacherSelection()" class="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700">บันทึก</button>
-                        </div>
-                    </div>
-                </div>`;
-            
-            modal.classList.remove('hidden');
-            document.getElementById('teacher-checkbox-list').addEventListener('change', handleModalCheckboxChange);
-            filterAndRenderTeacherList(); // Initial render
-        }
-
-        function filterAndRenderTeacherList() {
-            const listContainer = document.getElementById('teacher-checkbox-list');
-            if (!listContainer) return;
-
-            const selectedArea = document.getElementById('teacher-filter-area').value;
-            const searchTerm = document.getElementById('teacher-search-input').value.toLowerCase();
-            
-            let filteredTeachers = teacherData;
-
-            if (selectedArea !== 'all') {
-                filteredTeachers = filteredTeachers.filter(t => t.learningArea === selectedArea);
-            }
-
-            if (searchTerm) {
-                filteredTeachers = filteredTeachers.filter(t => getTeacherFullName(t.id).toLowerCase().includes(searchTerm));
-            }
-
-            listContainer.innerHTML = filteredTeachers.map(teacher => {
-                const isChecked = modalSelectedTeacherIds.includes(teacher.id);
-                return `
-                    <label class="flex items-center p-2 rounded-md hover:bg-gray-100 cursor-pointer">
-                        <input type="checkbox" value="${teacher.id}" class="h-5 w-5 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500" ${isChecked ? 'checked' : ''}>
-                        <span class="ml-3 text-sm text-gray-800">${getTeacherFullName(teacher.id)}</span>
-                    </label>
-                `;
-            }).join('');
-            
-            handleCheckboxLimit();
-        }
-
-        function handleModalCheckboxChange(event) {
-            const teacherId = parseInt(event.target.value);
-            const isChecked = event.target.checked;
-
-            if (isChecked) {
-                if (!modalSelectedTeacherIds.includes(teacherId)) {
-                    modalSelectedTeacherIds.push(teacherId);
-                }
+            const csvString = csvRows.join('\n');
+            const blob = new Blob(['\ufeff', csvString], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            if (link.download !== undefined) {
+              const url = URL.createObjectURL(blob);
+              link.setAttribute('href', url);
+              link.setAttribute('download', `ตารางสอนครูทั้งหมด-${new Date().toLocaleDateString('th-TH')}.csv`);
+              link.style.visibility = 'hidden';
+              document.body.appendChild(link);
+              link.click();
+              document.body.removeChild(link);
+              setMessage({ type: 'success', text: 'ส่งออกข้อมูลตารางสอนสำเร็จ!', tab: activeTab });
             } else {
-                const index = modalSelectedTeacherIds.indexOf(teacherId);
-                if (index > -1) {
-                    modalSelectedTeacherIds.splice(index, 1);
-                }
+              setMessage({ type: 'error', text: 'เบราว์เซอร์ของคุณไม่รองรับการดาวน์โหลดอัตโนมัติ', tab: activeTab });
             }
+          };
+          
+          const handleFileImport = async (file) => {
+            if (!file || isImporting) return;
             
-            handleCheckboxLimit(event); 
-        }
+            setIsImporting(true);
+            setMessage({ type: '', text: '', subText: '', details: [], tab: 'import' });
+            setImportSuccess(false);
 
-        function handleCheckboxLimit(event) {
-            const hint = document.getElementById('modal-hint');
-            if (modalSelectedTeacherIds.length > 5) {
-                if (event) {
-                    event.target.checked = false;
-                    const teacherId = parseInt(event.target.value);
-                    const index = modalSelectedTeacherIds.indexOf(teacherId);
-                    if (index > -1) {
-                        modalSelectedTeacherIds.splice(index, 1);
-                    }
-                }
-                hint.classList.add('text-red-500', 'font-semibold');
-                hint.innerText = 'ไม่สามารถเลือกครูเกิน 5 คนได้';
-            } else {
-                hint.classList.remove('text-red-500', 'font-semibold');
-                hint.innerText = `เลือกแล้ว ${modalSelectedTeacherIds.length}/5 คน`;
-            }
-        }
-
-        function saveTeacherSelection() {
-            updateAndRender(() => {
-                const { courseId, roomNumber } = currentAssignmentContext;
-                const assignmentKey = `${courseId}_${roomNumber}`;
-                
-                if (modalSelectedTeacherIds.length > 0) {
-                    teachingAssignments[assignmentKey] = [...modalSelectedTeacherIds];
-                } else {
-                    delete teachingAssignments[assignmentKey];
-                }
-            });
-            closeModal('teacher-selector-modal');
-        }
-
-        function closeModal(modalId) {
-            document.getElementById(modalId).classList.add('hidden');
-            modalSelectedTeacherIds = [];
-        }
-
-        // --- UTILITY FUNCTIONS ---
-        
-        /**
-         * Saves all primary data stores to the browser's localStorage.
-         */
-        function saveDataToLocalStorage() {
             try {
-                localStorage.setItem('courseData', JSON.stringify(courseData));
-                localStorage.setItem('teacherData', JSON.stringify(teacherData));
-                localStorage.setItem('teachingAssignments', JSON.stringify(teachingAssignments));
-                console.log("Data saved to localStorage.");
-            } catch (error) {
-                console.error("Could not save data to localStorage:", error);
-                showNotification("เกิดข้อผิดพลาดในการบันทึกข้อมูล", true);
-            }
-        }
+                const reader = new FileReader();
+                reader.onload = async (e) => {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    const firstSheetName = workbook.SheetNames[0];
+                    const worksheet = workbook.Sheets[firstSheetName];
+                    const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+                    console.log("Raw data from Excel:", jsonData);
 
-        /**
-         * Loads data from localStorage on page startup. If data exists, it overwrites the default data.
-         */
-        function loadDataFromLocalStorage() {
-            try {
-                const savedCourses = localStorage.getItem('courseData');
-                const savedTeachers = localStorage.getItem('teacherData');
-                const savedAssignments = localStorage.getItem('teachingAssignments');
+                    const expectedHeaders = ['รหัสครู', 'ชื่อครู', 'วัน', 'คาบที่', 'เวลา', 'วิชา', 'ห้อง', 'ห้องเรียน'];
+                    const fileHeaders = jsonData[0];
 
-                if (savedCourses) {
-                    courseData = JSON.parse(savedCourses);
-                    console.log("Loaded courseData from localStorage.");
-                }
-                if (savedTeachers) {
-                    teacherData = JSON.parse(savedTeachers);
-                    console.log("Loaded teacherData from localStorage.");
-                }
-                if (savedAssignments) {
-                    teachingAssignments = JSON.parse(savedAssignments);
-                    console.log("Loaded teachingAssignments from localStorage.");
-                }
-            } catch (error) {
-                console.error("Could not load data from localStorage:", error);
-                showNotification("ไม่สามารถโหลดข้อมูลที่บันทึกไว้ได้", true);
-            }
-        }
-
-        function getActiveTabs() {
-            const active = {};
-            const mainTab = document.querySelector('.main-tab-active');
-            if (mainTab) {
-                active.main = mainTab.id.replace('-main-tab', '');
-            }
-            
-            const prefixes = ['teacherList', 'course', 'teaching', 'teacher'];
-            active.dynamic = {};
-            prefixes.forEach(prefix => {
-                const tab = document.querySelector(`#${prefix}-dynamic-tabs .dynamic-tab.active`);
-                if (tab) {
-                    active.dynamic[prefix] = tab.dataset.target;
-                }
-            });
-            return active;
-        }
-
-        function restoreActiveTabs(tabs) {
-            if (tabs.main) {
-                changeMainView(tabs.main);
-            }
-            for (const prefix in tabs.dynamic) {
-                if (tabs.dynamic[prefix]) {
-                    const parentView = document.getElementById(`${prefix}-view`);
-                    if (parentView) {
-                        parentView.querySelectorAll('.dynamic-tab').forEach(t => t.classList.remove('active'));
-                        parentView.querySelectorAll('.table-container').forEach(c => c.classList.remove('active'));
-
-                        const tabToActivate = parentView.querySelector(`.dynamic-tab[data-target="${tabs.dynamic[prefix]}"]`);
-                        if (tabToActivate) {
-                            tabToActivate.classList.add('active');
-                            const tableToActivate = parentView.querySelector(`#${tabs.dynamic[prefix]}`);
-                            if (tableToActivate) {
-                                tableToActivate.classList.add('active');
-                            }
-                        }
+                    if (!fileHeaders || expectedHeaders.some(header => !fileHeaders.includes(header))) {
+                        const errorMessage = 'พบข้อผิดพลาด: ชื่อคอลัมน์ไม่ถูกต้อง กรุณาตรวจสอบให้ตรงกับที่กำหนด (รหัสครู, ชื่อครู, วัน, คาบที่, เวลา, วิชา, ห้อง, ห้องเรียน)';
+                        console.error(errorMessage, "Expected:", expectedHeaders, "Got:", fileHeaders);
+                        setMessage({ type: 'error', text: errorMessage, details: [], tab: 'import' });
+                        setIsImporting(false);
+                        return;
                     }
-                }
-            }
-        }
+                    const headerMap = Object.fromEntries(expectedHeaders.map(header => [header, fileHeaders.indexOf(header)]));
 
-        function findCourseById(courseId) {
-            for (const gradeKey in courseData) {
-                const course = courseData[gradeKey].courses.find(c => c.id === courseId);
-                if (course) return course;
-            }
-            return null;
-        }
-        
-        function findGradeKeyByCourseId(courseId) {
-             for (const gradeKey in courseData) {
-                if (courseData[gradeKey].courses.some(c => c.id === courseId)) return gradeKey;
-            }
-            return null;
-        }
+                    const newTeachersObj = {};
+                    const newSchedules = {};
+                    const dayMap = dayNames.reduce((acc, day, index) => ({ ...acc, [day]: index }), {});
+                    const importedTimesForPeriods = [...defaultPeriodTimes];
 
-        function getTeacherFullName(teacherId) {
-            const teacher = teacherData.find(t => t.id === teacherId);
-            return teacher ? `${teacher.title} ${teacher.firstName} ${teacher.lastName}` : 'ไม่พบชื่อ';
-        }
-        
-        function findTeacherIdByName(fullName) {
-            if (!fullName) return null;
-            const teacher = teacherData.find(t => {
-                const tFullName = `${t.title}${t.firstName} ${t.lastName}`;
-                return tFullName.replace(/\s/g, '') === fullName.trim().replace(/\s/g, '');
-            });
-            return teacher ? teacher.id : null;
-        }
+                    let importedRowCount = 0;
+                    const skippedRowDetails = [];
 
-
-        function getTeacherNames(teacherIds) {
-            return teacherIds.map(id => getTeacherFullName(id));
-        }
-
-        function getTeacherFirstNames(teacherIds) {
-            return teacherIds.map(id => {
-                const teacher = teacherData.find(t => t.id === id);
-                return teacher ? teacher.firstName : 'ไม่พบชื่อ';
-            });
-        }
-        
-        function getTeachersForLearningArea(area) {
-            const teacherIdSet = new Set();
-            const allCourses = Object.values(courseData).flatMap(g => g.courses);
-            const coursesInArea = allCourses.filter(c => c.learningArea === area);
-            coursesInArea.forEach(course => {
-                Object.keys(teachingAssignments).forEach(key => {
-                    if (key.startsWith(course.id)) {
-                        teachingAssignments[key].forEach(id => teacherIdSet.add(id));
-                    }
-                });
-            });
-            return Array.from(teacherIdSet);
-        }
-
-        function getGroupedAssignmentsForTeacher(teacherId) {
-            const assignmentsByCourse = {};
-            Object.entries(teachingAssignments).forEach(([key, teacherIds]) => {
-                if (teacherIds.includes(teacherId)) {
-                    const [courseId, room] = key.split('_');
-                    if (!assignmentsByCourse[courseId]) {
-                        const course = findCourseById(courseId);
-                        const gradeKey = findGradeKeyByCourseId(courseId);
-                        assignmentsByCourse[courseId] = {
-                            courseId: courseId,
-                            courseName: course ? course.name : 'N/A',
-                            periods: course ? course.periods : 0,
-                            grade: `ม.${gradeKey ? gradeKey.replace('m', '') : '?'}`,
-                            gradeKey: gradeKey,
-                            rooms: []
-                        };
-                    }
-                    assignmentsByCourse[courseId].rooms.push(parseInt(room));
-                }
-            });
-            return Object.values(assignmentsByCourse).map(a => {
-                a.rooms.sort((x, y) => x - y);
-                return a;
-            });
-        }
-
-        // --- TAB SWITCHING ---
-        function changeMainView(viewName) {
-            document.querySelectorAll('.view-container').forEach(v => v.classList.remove('active'));
-            document.getElementById(`${viewName}-view`).classList.add('active');
-            document.querySelectorAll('.main-tab-active').forEach(t => t.classList.remove('main-tab-active'));
-            document.getElementById(`${viewName}-main-tab`).classList.add('main-tab-active');
-        }
-
-        function changeActiveTab(event) {
-            const targetId = event.currentTarget.dataset.target;
-            const parentView = event.currentTarget.closest('.view-container');
-            parentView.querySelectorAll('.table-container').forEach(c => c.classList.remove('active'));
-            parentView.querySelector(`#${targetId}`).classList.add('active');
-            parentView.querySelectorAll('.dynamic-tab').forEach(tab => tab.classList.remove('active'));
-            event.currentTarget.classList.add('active');
-        }
-        
-        // --- TEMPLATE DOWNLOAD FUNCTIONS ---
-        function downloadTeacherTemplate() {
-            const workbook = XLSX.utils.book_new();
-
-            LEARNING_AREAS.forEach(area => {
-                let teachersInArea = teacherData.filter(t => t.learningArea === area);
-                
-                let data = teachersInArea.map(t => ({
-                    "รหัสครู": t.id,
-                    "คำนำหน้า": t.title,
-                    "ชื่อ": t.firstName,
-                    "สกุล": t.lastName,
-                    "กลุ่มสาระ": t.learningArea
-                }));
-
-                if (data.length === 0) {
-                    data.push({ "รหัสครู": "", "คำนำหน้า": "", "ชื่อ": "", "สกุล": "", "กลุ่มสาระ": area });
-                }
-
-                const worksheet = XLSX.utils.json_to_sheet(data);
-                const sheetName = area.substring(0, 31).replace(/[*?:/\\\[\]]/g, '_');
-                XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
-            });
-
-            XLSX.writeFile(workbook, "ไฟล์รายชื่อครู_ตามกลุ่มสาระ.xlsx");
-        }
-
-        function downloadCourseTemplate() {
-            const workbook = XLSX.utils.book_new();
-            const allCourses = Object.values(courseData).flatMap(grade => grade.courses);
-
-            LEARNING_AREAS.forEach(area => {
-                const coursesInArea = allCourses.filter(c => c.learningArea === area);
-
-                let data = coursesInArea.map(course => {
-                    const gradeKey = findGradeKeyByCourseId(course.id);
-                    const gradeLevel = gradeKey ? `ม.${gradeKey.replace('m', '')}` : '-';
-                    
-                    let row = {
-                        "รหัสวิชา": course.id,
-                        "ชื่อวิชา": course.name,
-                        "คาบ/สัปดาห์": course.periods,
-                        "หน่วยกิต": course.credits,
-                        "ม.": gradeLevel
+                    const getSolution = (reason) => {
+                        if (reason.includes('แถวว่างเปล่า')) return 'ตรวจสอบให้แน่ใจว่าแถวมีข้อมูลที่จำเป็น';
+                        if (reason.includes('ข้อมูลไม่สมบูรณ์')) return 'กรอกข้อมูลให้ครบถ้วนในคอลัมน์ที่ระบุ';
+                        if (reason.includes('ชื่อวันไม่ถูกต้อง')) return 'ใช้ชื่อวันเต็ม (จันทร์, อังคาร, พุธ, พฤหัสบดี, ศุกร์)';
+                        if (reason.includes('คาบที่')) return `ตรวจสอบให้แน่ใจว่าเป็นตัวเลขระหว่าง 1-${totalPeriods}`;
+                        return 'ตรวจสอบข้อมูลในแถวนี้ให้ถูกต้องตามรูปแบบ';
                     };
 
-                    for (let i = 1; i <= 15; i++) {
-                        row[`ห้อง${i}`] = course.rooms.includes(i) ? "/" : "";
+                    for (let i = 1; i < jsonData.length; i++) {
+                        const row = jsonData[i];
+                        if (!row || row.length === 0 || row.every(cell => !cell)) {
+                            skippedRowDetails.push({ row: i + 1, reason: 'แถวว่างเปล่า', solution: getSolution('แถวว่างเปล่า') });
+                            continue;
+                        }
+
+                        const teacherId = (row[headerMap['รหัสครู']] || '').toString().trim();
+                        const teacherName = (row[headerMap['ชื่อครู']] || '').toString().trim();
+                        const day = (row[headerMap['วัน']] || '').toString().trim();
+                        const periodRaw = (row[headerMap['คาบที่']] || '');
+                        const period = parseInt(periodRaw);
+                        const time = (row[headerMap['เวลา']] || '').toString().trim();
+                        const subject = (row[headerMap['วิชา']] || '').toString().trim();
+                        const classRoom = (row[headerMap['ห้อง']] || '').toString().trim();
+                        const room = (row[headerMap['ห้องเรียน']] || '').toString().trim();
+
+                        let isValidRow = true;
+                        const missingFields = [];
+
+                        if (!teacherId) missingFields.push('รหัสครู');
+                        if (!teacherName) missingFields.push('ชื่อครู');
+                        if (!day) missingFields.push('วัน');
+                        if (periodRaw === '' || isNaN(period) || period < 1 || period > totalPeriods) missingFields.push('คาบที่');
+                        
+                        if (!subject && (classRoom || room)) missingFields.push('วิชา');
+                        if (subject !== '.' && (!classRoom || !room)) {
+                            if(!classRoom) missingFields.push('ห้อง');
+                            if(!room) missingFields.push('ห้องเรียน');
+                        }
+
+
+                        if (missingFields.length > 0) {
+                            isValidRow = false;
+                            const reason = `ข้อมูลไม่สมบูรณ์ในคอลัมน์: ${missingFields.join(', ')}`;
+                            skippedRowDetails.push({ row: i + 1, reason: reason, solution: getSolution(reason) });
+                        }
+                        
+                        if (isValidRow && !dayMap.hasOwnProperty(day)) {
+                          isValidRow = false;
+                          const reason = `ชื่อวันไม่ถูกต้อง: "${day}"`;
+                          skippedRowDetails.push({ row: i + 1, reason: reason, solution: getSolution(reason) });
+                        }
+
+                        if (!isValidRow) continue;
+
+                        if(!subject && !classRoom && !room) continue;
+
+                        if (!newTeachersObj[teacherId]) {
+                           newTeachersObj[teacherId] = { id: teacherId, name: teacherName, subjectsCanTeach: [] };
+                        }
+                        if (subject && subject !== '.' && !newTeachersObj[teacherId].subjectsCanTeach.includes(subject)) {
+                            newTeachersObj[teacherId].subjectsCanTeach.push(subject);
+                        }
+
+                        const dayIndex = dayMap[day];
+                        const periodIndex = period - 1;
+
+                        if (!newSchedules[teacherId]) newSchedules[teacherId] = [];
+                        newSchedules[teacherId].push({ dayIndex, periodIndex, class: classRoom, subject, room, time });
+
+                        if (time && periodIndex >= 0 && periodIndex < totalPeriods) {
+                          importedTimesForPeriods[periodIndex] = time;
+                        }
+                        importedRowCount++;
                     }
-                    return row;
+                    
+                    let finalMessageText = '';
+                    let finalMessageType = 'success';
+
+                    if (importedRowCount > 0) {
+                        setTeachers(Object.values(newTeachersObj));
+                        setSchedule(newSchedules);
+                        setAbsences([]); // Clear old absences
+                        setImportSuccess(true);
+                        finalMessageText = `นำเข้าข้อมูลตารางสอนใหม่สำเร็จ ${importedRowCount} แถว.`;
+                        if (skippedRowDetails.length > 0) {
+                            finalMessageText += ` มี ${skippedRowDetails.length} แถวที่ถูกข้าม.`;
+                        }
+                    } else if (skippedRowDetails.length > 0) {
+                        finalMessageText = `นำเข้าข้อมูลตารางสอนสำเร็จ แต่ไม่มีแถวข้อมูลที่ถูกต้องถูกนำเข้า. มี ${skippedRowDetails.length} แถวที่ถูกข้าม.`;
+                        finalMessageType = 'error';
+                    } else {
+                        finalMessageText = 'ไฟล์ที่เลือกไม่มีข้อมูลตารางสอนที่สามารถนำเข้าได้.';
+                        finalMessageType = 'info';
+                    }
+
+                    setMessage({ type: finalMessageType, text: finalMessageText, details: skippedRowDetails, tab: 'import' });
+                    setImportFile(file);
+                    setCurrentPeriodTimes(importedTimesForPeriods);
+                };
+
+                reader.readAsArrayBuffer(file);
+            } catch (error) {
+                console.error("Error importing file:", error);
+                setMessage({ type: 'error', text: 'พบข้อผิดพลาด: ' + error.message, details: [], tab: 'import' });
+            } finally {
+                setIsImporting(false);
+            }
+          };
+
+          const handleClearSelectedFile = () => {
+            setImportFile(null);
+            setMessage({ type: '', text: '', subText: '', details: [], tab: '' });
+            const fileInput = document.getElementById('file-upload-modal');
+            if (fileInput) fileInput.value = '';
+          };
+
+          const handleFinishImport = () => {
+              setIsImportModalOpen(false);
+              setImportSuccess(false);
+              setActiveTab('substitute');
+          };
+
+          const handleDownloadSampleFile = async () => {
+            const headers = ["รหัสครู", "ชื่อครู", "วัน", "คาบที่", "เวลา", "วิชา", "ห้อง", "ห้องเรียน"];
+            const sampleData = [
+              ["T001", "ครูสมชาย", "จันทร์", "1", "08:30-09:20", "คณิตศาสตร์", "ม.1/1", "ห้อง 101"],
+              ["T002", "ครูสมศรี", "อังคาร", "2", "09:20-10:10", "ภาษาไทย", "ม.2/2", "ห้อง 202"],
+              ["T003", "ครูสมศักดิ์", "พุธ", "4", "11:00-11:50", "ลูกเสือ", ".", "."],
+              ["T001", "ครูสมชาย", "พฤหัสบดี", "5", "11:50-12:40", "วิทยาศาสตร์", "ม.1/1", "ห้อง 101"],
+              ["T002", "ครูสมศรี", "ศุกร์", "7", "13:30-14:20", "พลศึกษา", "ม.3/1", "สนามบาส"]
+            ];
+
+          
+
+            const ws = XLSX.utils.aoa_to_sheet([headers, ...sampleData]);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Sample Schedule");
+
+            const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'binary' });
+
+            const s2ab = (s) => {
+              const buf = new ArrayBuffer(s.length);
+              const view = new Uint8Array(buf);
+              for (let i = 0; i < s.length; i++) view[i] = s.charCodeAt(i) & 0xFF;
+              return buf;
+            };
+
+            const blob = new Blob([s2ab(wbout)], { type: 'application/octet-stream' });
+            const link = document.createElement('a');
+            if (link.download !== undefined) {
+              const url = URL.createObjectURL(blob);
+              link.setAttribute('href', url);
+              link.setAttribute('download', `sample_schedule_import.xlsx`);
+              link.style.visibility = 'hidden';
+              document.body.appendChild(link);
+              link.click();
+              document.body.removeChild(link);
+              setMessage({ type: 'success', text: 'ดาวน์โหลดไฟล์ตัวอย่างสำเร็จ!', tab: 'import' });
+            } else {
+              setMessage({ type: 'error', text: 'เบราว์เซอร์ของคุณไม่รองรับการดาวน์โหลดอัตโนมัติ', tab: 'import' });
+            }
+          };
+
+          const absentTeacherIds = [...new Set(absences
+            .filter(abs => abs.dayIndex === selectedDayIndex)
+            .map(abs => abs.teacherId)
+          )];
+
+          const absentTeachers = teachers.filter(t => absentTeacherIds.includes(t.id));
+          let presentTeachers = teachers.filter(t => !absentTeacherIds.includes(t.id));
+
+          if (presentTeachersViewMode === 'substitutes_first') {
+              const substituteTeachers = presentTeachers.filter(teacher =>
+                  absences.some(abs => abs.substituteId === teacher.id && abs.dayIndex === selectedDayIndex)
+              ).sort((a, b) => a.id.localeCompare(b.id, 'th'));
+
+              const otherTeachers = presentTeachers.filter(teacher =>
+                  !absences.some(abs => abs.substituteId === teacher.id && abs.dayIndex === selectedDayIndex)
+              ).sort((a, b) => a.id.localeCompare(b.id, 'th'));
+
+              presentTeachers = [...substituteTeachers, ...otherTeachers];
+          } else if (presentTeachersViewMode === 'alphabetical') {
+              presentTeachers.sort((a, b) => a.id.localeCompare(b.id, 'th'));
+          }
+          
+          const filteredTeachers = useMemo(() => {
+              if (!selectedTimetableTeacherId && !timetableSearchQuery) {
+                  return teachers.sort((a, b) => a.id.localeCompare(b.id, 'th'));
+              }
+
+              let currentTeachers = teachers;
+
+              if (selectedTimetableTeacherId) {
+                  currentTeachers = teachers.filter(teacher => teacher.id === selectedTimetableTeacherId);
+              } else if (timetableSearchQuery) {
+                  currentTeachers = teachers.filter(teacher =>
+                      teacher.name.toLowerCase().includes(timetableSearchQuery.toLowerCase()) ||
+                      teacher.id.toLowerCase().includes(timetableSearchQuery.toLowerCase())
+                  );
+              }
+              return currentTeachers.sort((a, b) => a.id.localeCompare(b.id, 'th'));
+          }, [teachers, selectedTimetableTeacherId, timetableSearchQuery]);
+
+          const substituteSummary = useMemo(() => {
+            const flatSummary = absences
+                .filter(abs => abs.substituteId) // Only include assigned substitutions
+                .map(abs => ({
+                    substituteId: abs.substituteId,
+                    substituteName: getTeacherName(abs.substituteId),
+                    absentTeacherId: abs.teacherId,
+                    absentTeacherName: getTeacherName(abs.teacherId),
+                    dayIndex: abs.dayIndex,
+                    periodIndex: abs.periodIndex,
+                    time: abs.time || currentPeriodTimes[abs.periodIndex],
+                    subject: abs.subject,
+                    class: abs.class,
+                    room: abs.room,
+                }))
+                .sort((a, b) => {
+                    // Sort by day, then substitute teacher, then period
+                    if (a.dayIndex !== b.dayIndex) return a.dayIndex - b.dayIndex;
+                    const nameA = a.substituteName || '';
+                    const nameB = b.substituteName || '';
+                    if (nameA.localeCompare(nameB, 'th') !== 0) {
+                        return nameA.localeCompare(nameB, 'th');
+                    }
+                    return a.periodIndex - b.periodIndex;
                 });
 
-                if (data.length === 0) {
-                    let exampleRow = { "รหัสวิชา": "", "ชื่อวิชา": "", "คาบ/สัปดาห์": "", "หน่วยกิต": "", "ม.": "" };
-                    for (let i = 1; i <= 15; i++) exampleRow[`ห้อง${i}`] = "";
-                    data.push(exampleRow);
-                }
+            return flatSummary;
+          }, [absences, teachers, currentPeriodTimes]);
 
-                const worksheet = XLSX.utils.json_to_sheet(data);
-                const sheetName = area.substring(0, 31).replace(/[*?:/\\\[\]]/g, '_');
-                XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
-            });
+          // Memoize available substitutes to avoid recalculation
+          const availableSubstitutes = useMemo(() => {
+            if (!selectedAbsentSlot) return [];
+            return getAvailableSubstitutes(selectedAbsentSlot, absences);
+          }, [selectedAbsentSlot, schedule, absences, teachers]);
 
-            XLSX.writeFile(workbook, "ไฟล์รายวิชา_ตามกลุ่มสาระ.xlsx");
-        }
 
-        // --- FILE UPLOAD HANDLERS ---
-        function handleTeacherFileUpload(event) {
-            const file = event.target.files[0];
-            if (!file) return;
+          return (
+            <div className="bg-gray-50 min-h-screen p-4 sm:p-8 font-sans antialiased text-gray-800">
+              <div className="container mx-auto max-w-7xl">
+                <header className="mb-8 p-6 bg-white rounded-2xl shadow-xl border-t-4 border-blue-500">
+                  <h1 className="text-3xl sm:text-4xl font-bold text-center text-blue-800 mb-2">
+                    ระบบจัดสอนแทน (Offline)
+                  </h1>
+                  <p className="text-center text-gray-400 text-xs mt-2">
+                    ข้อมูลจะถูกบันทึกอัตโนมัติในเบราว์เซอร์ของคุณ
+                  </p>
+                </header>
 
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                try {
-                    const data = new Uint8Array(e.target.result);
-                    const workbook = XLSX.read(data, { type: 'array' });
-                    
-                    let newTeacherData = [];
-                    let hasValidData = false;
+                <div className="flex bg-white rounded-t-2xl shadow-md overflow-hidden">
+                  <button
+                    className={`flex-1 py-4 px-6 text-center text-lg font-bold transition-colors duration-200 ${
+                      activeTab === 'substitute' ? 'bg-blue-600 text-white shadow-inner' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}
+                    onClick={() => setActiveTab('substitute')}
+                  >
+                    ระบบจัดสอนแทน
+                  </button>
+                  <button
+                    className={`flex-1 py-4 px-6 text-center text-lg font-bold transition-colors duration-200 ${
+                      activeTab === 'full_schedule' ? 'bg-blue-600 text-white shadow-inner' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}
+                    onClick={() => setActiveTab('full_schedule')}
+                  >
+                    ตารางสอน
+                  </button>
+                </div>
 
-                    workbook.SheetNames.forEach(sheetName => {
-                        const worksheet = workbook.Sheets[sheetName];
-                        const json = XLSX.utils.sheet_to_json(worksheet);
-
-                        if (json.length > 0) {
-                            const firstRow = json[0];
-                            const expectedHeaders = ["รหัสครู", "คำนำหน้า", "ชื่อ", "สกุล", "กลุ่มสาระ"];
-                            const actualHeaders = Object.keys(firstRow);
-                            
-                            // Check if all expected headers are present
-                            const headersOk = expectedHeaders.every(h => actualHeaders.includes(h));
-
-                            if (headersOk) {
-                                hasValidData = true;
-                                json.forEach(row => {
-                                    // Ensure row has data before pushing
-                                    if (row["รหัสครู"] && row["ชื่อ"]) {
-                                        newTeacherData.push({
-                                            id: row["รหัสครู"],
-                                            title: row["คำนำหน้า"],
-                                            firstName: row["ชื่อ"],
-                                            lastName: row["สกุล"],
-                                            learningArea: row["กลุ่มสาระ"],
-                                        });
-                                    }
-                                });
-                            } else {
-                                console.warn(`Sheet "${sheetName}" has incorrect headers. Skipping.`);
-                            }
-                        }
-                    });
-
-                    if (!hasValidData) {
-                        showNotification("ไม่พบข้อมูลที่ถูกต้องในไฟล์", true);
-                        return;
-                    }
-                    
-                    updateAndRender(() => {
-                        teacherData = newTeacherData;
-                    });
-                    showNotification("อัปโหลดรายชื่อครูสำเร็จ", false);
-
-                } catch (error) {
-                    console.error("Upload Error:", error);
-                    showNotification("เกิดข้อผิดพลาดในการอ่านไฟล์", true);
-                }
-            };
-            reader.readAsArrayBuffer(file);
-            event.target.value = ''; 
-        }
-
-        function handleCourseFileUpload(event) {
-            const file = event.target.files[0];
-            if (!file) return;
-
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                try {
-                    const data = new Uint8Array(e.target.result);
-                    const workbook = XLSX.read(data, { type: 'array' });
-                    
-                    const newCourseData = {};
-                    let hasValidData = false;
-
-                    workbook.SheetNames.forEach(sheetName => {
-                        const worksheet = workbook.Sheets[sheetName];
-                        const json = XLSX.utils.sheet_to_json(worksheet);
+                <main className="grid grid-cols-1 gap-6 p-6 bg-white rounded-b-2xl shadow-xl">
+                  {activeTab === 'substitute' && (
+                    <>
+                      <section className="bg-gray-50 rounded-2xl p-6 border border-gray-200 shadow-sm relative">
+                        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 gap-4">
+                          <h2 className="text-xl font-semibold text-black flex items-center gap-2">
+                            <IconX /> ตารางสอนของครูที่ลา วัน{dayNames[selectedDayIndex]}
+                          </h2>
+                          <button
+                            onClick={() => setIsImportModalOpen(true)}
+                            className="absolute top-4 right-4 px-3 py-1.5 rounded-xl bg-yellow-400 text-white font-medium shadow-sm hover:bg-yellow-500 transition-colors duration-200 flex items-center justify-center gap-1 text-sm sm:text-sm"
+                          >
+                            <IconUpload className="w-4 h-4" />
+                            นำเข้าข้อมูล
+                          </button>
+                        </div>
                         
-                        if (json.length > 0) {
-                            const firstRow = json[0];
-                            const expectedHeaders = ["รหัสวิชา", "ชื่อวิชา", "คาบ/สัปดาห์", "หน่วยกิต", "ม."];
-                            const actualHeaders = Object.keys(firstRow);
-                            const headersOk = expectedHeaders.every(h => actualHeaders.includes(h));
+                        <div className="flex flex-col gap-4 mb-4">
+                          <div className="w-full sm:w-1/2 mx-auto">
+                            <label htmlFor="day-select" className="block text-sm font-medium text-gray-700 mb-2">เลือกวัน :</label>
+                            <div className="flex items-center space-x-1 bg-gray-100 p-1 rounded-xl shadow-inner">
+                              {dayNames.map((day, index) => (
+                                <button
+                                  key={index}
+                                  onClick={() => setSelectedDayIndex(index)}
+                                  className={`flex-1 px-2 py-1 rounded-xl text-sm font-medium transition-all duration-200 ease-in-out flex-shrink-0
+                                    ${selectedDayIndex === index ? 'bg-blue-600 text-white shadow-md' : 'text-gray-700 hover:bg-gray-200'}`}
+                                >
+                                  {day}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                          <div className="flex-grow">
+                            <label htmlFor="teacher-select" className="block text-sm font-medium text-gray-700 mb-2">
+                              เลือกครูที่ลา :
+                            </label>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+                                <div className="flex-1">
+                                    <label htmlFor="teacher-select" className="sr-only">เลือกครูที่ลา</label>
+                                    <select
+                                        id="teacher-select"
+                                        value={selectedTeacherToReportAbsence}
+                                        onChange={handleTeacherSelectionChange}
+                                        className="block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 rounded-md shadow-sm appearance-none"
+                                    >
+                                        <option value="">--เลือกครู--</option>
+                                        {teachers
+                                            .filter(teacher => !absentTeacherIds.includes(teacher.id))
+                                            .filter(teacher => teacher.name.toLowerCase().includes(teacherAbsenceSearchQuery.toLowerCase()))
+                                            .sort((a, b) => a.id.localeCompare(b.id, 'th'))
+                                            .map(teacher => (
+                                                <option key={teacher.id} value={teacher.id}>
+                                                    {teacher.id} - {teacher.name}
+                                                </option>
+                                            ))}
+                                    </select>
+                                </div>
+                                <div className="flex-1">
+                                    <label htmlFor="teacher-absence-search" className="sr-only">ค้นหาชื่อครู</label>
+                                    <input
+                                        id="teacher-absence-search"
+                                        type="text"
+                                        placeholder="--พิมพ์ชื่อ--"
+                                        value={teacherAbsenceSearchQuery}
+                                        onChange={(e) => setTeacherAbsenceSearchQuery(e.target.value)}
+                                        className="block w-full px-4 py-2 text-base border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                    />
+                                </div>
+                                <div className="flex flex-col sm:flex-row gap-3">
+                                  <button
+                                      onClick={handleAutoAssignSubstitutes}
+                                      disabled={absentTeachers.length === 0 || isAutoAssigning || autoAssignSuccess}
+                                      className={`
+                                          flex-1 sm:flex-none px-4 py-2 rounded-xl text-white font-medium shadow-sm transition-all duration-300 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center gap-2 relative overflow-hidden w-36
+                                          ${autoAssignSuccess 
+                                              ? 'bg-blue-500' 
+                                              : absentTeachers.length > 0 ? 'bg-green-600 hover:bg-green-700 shimmer-button aura-button' : 'bg-gray-400'
+                                          }
+                                      `}
+                                  >
+                                      {autoAssignSuccess ? (
+                                          <>
+                                              <IconCheckCircle className="w-5 h-5" />
+                                              <span>สำเร็จ!</span>
+                                          </>
+                                      ) : isAutoAssigning ? (
+                                          <>
+                                              <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                              </svg>
+                                              <span>กำลังจัด...</span>
+                                          </>
+                                      ) : (
+                                          <>
+                                              <IconZap className="w-5 h-5" />
+                                              <span>จัดอัตโนมัติ</span>
+                                          </>
+                                      )}
+                                  </button>
+                                  <button
+                                      onClick={() => setIsClearConfirmModalOpen(true)}
+                                      className={`
+                                          flex-1 sm:flex-none px-4 py-2 rounded-xl text-white font-medium shadow-sm transition-colors duration-200 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center gap-2 w-36
+                                          ${clearDataSuccess ? 'bg-emerald-500' : 'bg-red-600 hover:bg-red-700'}
+                                      `}
+                                      disabled={isClearing || clearDataSuccess}
+                                  >
+                                      {clearDataSuccess ? (
+                                          <>
+                                              <IconCheckCircle className="w-5 h-5" />
+                                              <span>ล้างแล้ว</span>
+                                          </>
+                                      ) : isClearing ? (
+                                          <>
+                                              <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                              </svg>
+                                              <span>กำลังล้าง...</span>
+                                          </>
+                                      ) : (
+                                          <>
+                                              <IconTrash2 className="w-5 h-5" />
+                                              <span>ล้างข้อมูล</span>
+                                          </>
+                                      )}
+                                  </button>
+                                </div>
+                            </div>
+                          </div>
+                        </div>
 
-                            if(headersOk) {
-                                hasValidData = true;
-                                json.forEach(row => {
-                                    const subjectCode = row["รหัสวิชา"];
-                                    if (!subjectCode || !row["ม."]) return;
+                        {message.text && activeTab === 'substitute' && message.tab === 'substitute' && (
+                            <div className={`p-4 rounded-lg shadow mt-6 mb-4 flex flex-col sm:flex-row items-start sm:items-center justify-between animate-fade-in
+                              ${message.type === 'success' ? 'bg-green-100 border-l-4 border-green-500 text-green-700' : 
+                                message.type === 'error' ? 'bg-red-100 border-l-4 border-red-500 text-red-700' :
+                                'bg-blue-100 border-l-4 border-blue-500 text-blue-700'}`}
+                              role="alert"
+                            >
+                              <div className="flex items-start mb-2 sm:mb-0">
+                                {message.type === 'success' ? <IconCheckCircle className="h-5 w-5 mr-3 flex-shrink-0" /> : 
+                                 message.type === 'error' ? <IconX className="h-5 w-5 mr-3 flex-shrink-0" /> :
+                                 <IconInfo className="w-5 h-5 mr-3 flex-shrink-0" />}
+                                <div>
+                                    <p className="font-medium">{message.text}</p>
+                                    {message.subText && (
+                                        <div className="text-red-600 mt-1">
+                                            {message.subText.split('\n').map((line, index) => (
+                                                <p key={index} className={index === 0 ? 'font-bold' : 'font-normal'}>
+                                                    {line}
+                                                </p>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                              </div>
+                              <button
+                                onClick={() => setMessage({ type: '', text: '', subText: '', tab: '' })}
+                                className={`ml-auto sm:ml-4 p-1 rounded-full transition-colors flex-shrink-0
+                                  ${message.type === 'success' ? 'hover:bg-green-200 text-green-600' : 
+                                    message.type === 'error' ? 'hover:bg-red-200 text-red-600' :
+                                    'hover:bg-blue-200 text-blue-600'}`}
+                                aria-label="Close message"
+                              >
+                                <IconX className="h-4 w-4" />
+                              </button>
+                            </div>
+                          )}
 
-                                    const gradeStr = String(row["ม."]).match(/\d+/);
-                                    if (!gradeStr) return;
-                                    const gradeKey = `m${gradeStr[0]}`;
+                        {absentTeachers.length > 0 && (
+                            <div className="mt-6">
+                                <div className="overflow-x-auto">
+                                <table className="min-w-full table-fixed border-collapse">
+                                    <thead>
+                                    <tr className="bg-gray-200 text-gray-800 font-bold uppercase text-sm">
+                                        <th className="p-3 border border-gray-300 w-[15%]">ชื่อครู</th>
+                                        {periods.map(period => (
+                                        <th key={period} className="p-3 border border-gray-300 w-[8.5%]">
+                                            {period}
+                                            <p className="text-xs font-normal text-gray-600 mt-1">{currentPeriodTimes[period - 1]}</p>
+                                        </th>
+                                        ))}
+                                    </tr>
+                                    </thead>
+                                    <tbody>
+                                    {absentTeachers.map(teacher => (
+                                        <tr key={teacher.id} className="text-center text-sm even:bg-gray-100">
+                                        <td className="p-3 border border-gray-300 font-bold bg-gray-200 text-gray-700 align-middle">
+                                            <div className="flex items-center justify-between h-full">
+                                                <span>
+                                                <p className="text-xs text-gray-500">{teacher.id}</p>
+                                                {teacher.name}
+                                                </span>
+                                                <button 
+                                                    onClick={() => handleRemoveAbsence(teacher.id)}
+                                                    className="text-red-500 hover:text-red-700 p-1 rounded-full transition-colors"
+                                                    title={`ลบการลาของครู ${teacher.name}`}
+                                                >
+                                                    <IconXCircle className="w-4 h-4" />
+                                                </button>
+                                            </div>
+                                        </td>
+                                        {periods.map(periodIndex => {
+                                            const slot = getSlot(teacher.id, selectedDayIndex, periodIndex - 1);
+                                            if (!slot || slot.subject === '.') return <td key={`${teacher.id}-${periodIndex}`} className={`p-3 border border-gray-200 ${getSlotClass(teacher.id, selectedDayIndex, periodIndex - 1)}`}></td>;
 
-                                    if (!newCourseData[gradeKey]) {
-                                        newCourseData[gradeKey] = { name: `ม. ${gradeStr[0]}`, courses: [] };
+                                            const absence = absences.find(abs => 
+                                            abs.teacherId === teacher.id && abs.dayIndex === selectedDayIndex && abs.periodIndex === periodIndex - 1);
+                                            
+                                            return (
+                                            <td
+                                                key={`${teacher.id}-${periodIndex}`}
+                                                className={`p-3 border border-gray-300 
+                                                ${absence && absence.substituteId ? 'bg-green-100 text-green-800' : 
+                                                    (absence && !absence.substituteId ? 'bg-red-100 text-red-800' : 'bg-white')} 
+                                                cursor-pointer`}
+                                                onClick={() => handleCellClick(teacher.id, selectedDayIndex, periodIndex - 1)}
+                                            >
+                                                <div>
+                                                <p className="font-semibold text-xs sm:text-sm">{slot.subject}</p>
+                                                <p className="text-[10px] sm:text-xs text-gray-500">{slot.class}</p>
+                                                <p className="text-[10px] sm:text-xs text-gray-500">{slot.room}</p>
+                                                {absence && absence.substituteId && (
+                                                    <div className="text-[10px] text-green-600 font-medium mt-1">
+                                                        <p>สอนแทนโดย :</p>
+                                                        <p>{absence.substituteId}</p>
+                                                        <p>{getTeacherName(absence.substituteId)}</p>
+                                                    </div>
+                                                )}
+                                                </div>
+                                            </td>
+                                            );
+                                        })}
+                                        </tr>
+                                    ))}
+                                    </tbody>
+                                </table>
+                                </div>
+                            </div>
+                        )}
+                      </section>
+
+                      <section className="bg-white rounded-2xl p-6 overflow-x-auto border border-gray-200 shadow-sm">
+                        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 gap-4">
+                          <h2 className="text-xl font-semibold text-blue-700 flex items-center gap-2">
+                            <IconCheckCircle /> ตารางสอนของครูที่ไม่ได้ลา วัน{dayNames[selectedDayIndex]}
+                          </h2>
+                          <div className="flex items-center space-x-2 bg-gray-100 p-1 rounded-xl shadow-inner">
+                            <button
+                              onClick={() => setPresentTeachersViewMode('substitutes_first')}
+                              className={`px-4 py-1 rounded-xl text-sm font-medium transition-all duration-200 ease-in-out
+                                ${presentTeachersViewMode === 'substitutes_first' ? 'bg-blue-600 text-white shadow-md' : 'text-gray-700 hover:bg-gray-200'}`}
+                            >
+                              มีสอนแทน
+                            </button>
+                            <button
+                              onClick={() => setPresentTeachersViewMode('alphabetical')}
+                              className={`px-4 py-1 rounded-xl text-sm font-medium transition-all duration-200 ease-in-out
+                                ${presentTeachersViewMode === 'alphabetical' ? 'bg-blue-600 text-white shadow-md' : 'text-gray-700 hover:bg-gray-200'}`}
+                            >
+                              A-Z
+                            </button>
+                          </div>
+                        </div>
+                        <div className="overflow-x-auto">
+                          <table className="min-w-full table-fixed border-collapse">
+                            <thead>
+                              <tr className="bg-blue-100 text-blue-800 font-bold uppercase text-sm">
+                                <th className="p-3 border border-blue-200 w-[15%]">ชื่อครู</th>
+                                {periods.map(period => (
+                                  <th key={period} className="p-3 border border-blue-200 w-[8.5%]">
+                                    {period}
+                                    <p className="text-xs font-normal text-blue-600 mt-1">{currentPeriodTimes[period - 1]}</p>
+                                  </th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {presentTeachers.map(teacher => (
+                                <tr key={teacher.id} className="text-center text-sm even:bg-gray-50">
+                                  <td className="p-3 border border-gray-200 font-bold bg-blue-50 text-blue-700">
+                                    <div>
+                                        <p className="text-xs text-gray-500">{teacher.id}</p>
+                                        <p>{teacher.name}</p>
+                                    </div>
+                                  </td>
+                                  {periods.map(periodIndex => {
+                                    const slot = getSlot(teacher.id, selectedDayIndex, periodIndex - 1);
+                                    
+                                    const substituteSlot = absences.find(abs => 
+                                      abs.substituteId === teacher.id && 
+                                      abs.dayIndex === selectedDayIndex && 
+                                      abs.periodIndex === periodIndex - 1
+                                    );
+
+                                    if (substituteSlot) {
+                                      return (
+                                        <td 
+                                          key={`${teacher.id}-${periodIndex}`} 
+                                          className={`p-3 border border-blue-200 bg-yellow-100 text-yellow-800 font-medium`}
+                                        >
+                                            <p className="font-semibold text-xs sm:text-sm">{substituteSlot.subject}</p>
+                                            <p className="text-[10px] sm:text-xs text-gray-500">{substituteSlot.class}</p>
+                                            <p className="text-[10px] sm:text-xs text-gray-500">{substituteSlot.room}</p>
+                                            <div className="text-[10px] text-yellow-800 font-medium mt-1">
+                                                <p>ครูที่ลา :</p>
+                                                <p className="text-red-600">{substituteSlot.teacherId}</p>
+                                                <p className="text-red-600">{getTeacherName(substituteSlot.teacherId)}</p>
+                                            </div>
+                                        </td>
+                                      );
                                     }
                                     
-                                    const rooms = [];
-                                    for (let i = 1; i <= 15; i++) {
-                                        if (row[`ห้อง${i}`] === '/') {
-                                            rooms.push(i);
-                                        }
+                                    if (!slot) {
+                                      return <td key={`${teacher.id}-${periodIndex}`} className="p-3 border border-gray-200 bg-gray-50"></td>;
                                     }
                                     
-                                    // Try to preserve learning area if course already exists
-                                    const existingCourse = findCourseById(subjectCode);
-                                    const learningArea = existingCourse ? existingCourse.learningArea : sheetName.replace(/_/g, ' ');
-
-                                    newCourseData[gradeKey].courses.push({
-                                        id: subjectCode,
-                                        name: row["ชื่อวิชา"],
-                                        periods: row["คาบ/สัปดาห์"],
-                                        credits: row["หน่วยกิต"],
-                                        learningArea: learningArea,
-                                        rooms: rooms
-                                    });
-                                });
-                            } else {
-                                 console.warn(`Sheet "${sheetName}" has incorrect headers. Skipping.`);
-                            }
-                        }
-                    });
-
-                    if (!hasValidData) {
-                        showNotification("ไม่พบข้อมูลที่ถูกต้องในไฟล์", true);
-                        return;
-                    }
-
-                    updateAndRender(() => {
-                        courseData = newCourseData;
-                        teachingAssignments = {}; // Clear assignments as they are not in the new file format
-                    });
-                    showNotification("อัปโหลดรายวิชาสำเร็จ", false);
-
-                } catch (error) {
-                    console.error("Upload Error:", error);
-                    showNotification("เกิดข้อผิดพลาดในการอ่านไฟล์: " + error.message, true);
-                }
-            };
-            reader.readAsArrayBuffer(file);
-            event.target.value = '';
-        }
-
-
-        function showNotification(message, isError = false) {
-            const notification = document.getElementById('notification');
-            notification.textContent = message;
-            notification.style.backgroundColor = isError ? '#ef4444' : '#22c55e';
-            notification.classList.add('show');
-            setTimeout(() => {
-                notification.classList.remove('show');
-            }, 3000);
-        }
-
-        // --- Generic Table Shell Creators ---
-        function createCourseTableShell(id, isActive) {
-            let roomHeaders = '';
-            for(let i=1; i<=15; i++) roomHeaders += `<th scope="col" class="px-2 py-3 text-center text-xs font-bold text-gray-600 uppercase tracking-wider border-r">ห้อง<br>${i}</th>`;
-            return `
-                <div id="${id}" class="table-container ${isActive ? 'active' : ''}">
-                    <div class="overflow-x-auto bg-white rounded-lg shadow">
-                        <table class="min-w-full">
-                            <thead class="bg-gray-100">
-                                <tr>
-                                    <th scope="col" class="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase tracking-wider border-r">รหัสวิชา</th>
-                                    <th scope="col" class="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase tracking-wider border-r">ชื่อวิชา</th>
-                                    <th scope="col" class="px-3 py-3 text-center text-xs font-bold text-gray-600 uppercase tracking-wider border-r">คาบ/<br>สัปดาห์</th>
-                                    <th scope="col" class="px-3 py-3 text-center text-xs font-bold text-gray-600 uppercase tracking-wider border-r">หน่วย<br>กิต</th>
-                                    <th scope="col" class="px-3 py-3 text-center text-xs font-bold text-gray-600 uppercase tracking-wider border-r">ม.</th>
-                                    ${roomHeaders}
+                                    return (
+                                      <td
+                                        key={`${teacher.id}-${periodIndex}`}
+                                        className={`p-3 border border-gray-200 ${getSlotClass(teacher.id, selectedDayIndex, periodIndex - 1)}`}
+                                      >
+                                        {slot.subject === '.' ? (
+                                            <span>.</span>
+                                        ) : (
+                                          <div>
+                                            <p className="font-semibold text-xs sm:text-sm">{slot.subject}</p>
+                                            <p className="text-[10px] sm:text-xs text-gray-500">{slot.class}</p>
+                                            <p className="text-[10px] sm:text-xs text-gray-500">{slot.room}</p>
+                                          </div>
+                                        )}
+                                      </td>
+                                    );
+                                  })}
                                 </tr>
-                            </thead>
-                            <tbody></tbody>
-                        </table>
-                    </div>
-                </div>`;
-        }
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </section>
 
-        function createTeacherTableShell(id, isActive) {
-             return `
-                <div id="${id}" class="table-container ${isActive ? 'active' : ''}">
-                    <div class="overflow-x-auto bg-white rounded-lg shadow">
-                        <table class="min-w-full" style="table-layout: auto;">
-                            <thead class="bg-gray-100">
-                                <tr>
-                                    <th scope="col" class="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase tracking-wider border-r">ครู</th>
-                                    <th scope="col" class="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase tracking-wider border-r">รหัสวิชา</th>
-                                    <th scope="col" class="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase tracking-wider border-r">วิชา</th>
-                                    <th scope="col" class="px-3 py-3 text-center text-xs font-bold text-gray-600 uppercase tracking-wider border-r">คาบ/สัปดาห์</th>
-                                    <th scope="col" class="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase tracking-wider border-r">ห้องที่สอน</th>
-                                    <th scope="col" class="px-6 py-3 text-center text-xs font-bold text-gray-600 uppercase tracking-wider">คาบสอน/สัปดาห์</th>
-                                </tr>
-                            </thead>
-                            <tbody></tbody>
-                        </table>
+                      <section className="bg-yellow-50 border-l-4 border-yellow-200 p-4 rounded-lg mb-6 shadow-sm mt-6">
+                        <h2 className="text-xl font-semibold text-yellow-700 flex items-center gap-2 mb-4">
+                            <IconInfo className="w-5 h-5 text-yellow-600 mr-2" /> [ สรุป ] คาบสอนแทน
+                        </h2>
+                        {substituteSummary.length > 0 ? (
+                            <div className="overflow-x-auto">
+                                <table className="min-w-full table-auto border-collapse bg-white rounded-lg shadow-sm">
+                                    <thead className="bg-yellow-100 text-yellow-800 text-sm">
+                                        <tr>
+                                            <th className="p-3 border border-yellow-200 text-left">ครูสอนแทน</th>
+                                            <th className="p-3 border border-yellow-200 text-left">ครูที่ลา</th>
+                                            <th className="p-3 border border-yellow-200 text-left">วัน</th>
+                                            <th className="p-3 border border-yellow-200 text-center">คาบ</th>
+                                            <th className="p-3 border border-yellow-200 text-left">เวลา</th>
+                                            <th className="p-3 border border-yellow-200 text-left">วิชา</th>
+                                            <th className="p-3 border border-yellow-200 text-left">ห้อง</th>
+                                            <th className="p-3 border border-yellow-200 text-left">ห้องเรียน</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {substituteSummary.map((slot, index) => {
+                                            const prevSlot = index > 0 ? substituteSummary[index - 1] : null;
+                                            const showSubstituteName = !prevSlot || prevSlot.substituteId !== slot.substituteId;
+                                            const isNewGroup = showSubstituteName;
+
+                                            return (
+                                                <tr key={index} className={`text-sm even:bg-gray-50 hover:bg-yellow-50 ${isNewGroup && index > 0 ? 'border-t-2 border-gray-400' : ''}`}>
+                                                    <td className="p-2 border border-gray-200 font-semibold text-blue-700">
+                                                        {showSubstituteName ? `${slot.substituteName} (${slot.substituteId})` : ''}
+                                                    </td>
+                                                    <td className="p-2 border border-gray-200 text-red-600">{slot.absentTeacherName} ({slot.absentTeacherId})</td>
+                                                    <td className="p-2 border border-gray-200">{dayNames[slot.dayIndex]}</td>
+                                                    <td className="p-2 border border-gray-200 text-center">{slot.periodIndex + 1}</td>
+                                                    <td className="p-2 border border-gray-200">{slot.time}</td>
+                                                    <td className="p-2 border border-gray-200">{slot.subject}</td>
+                                                    <td className="p-2 border border-gray-200">{slot.class}</td>
+                                                    <td className="p-2 border border-gray-200">{slot.room}</td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+                        ) : (
+                            <p className="text-gray-500 text-center py-4">ยังไม่มีข้อมูลการสอนแทน</p>
+                        )}
+                      </section>
+                    </>
+                  )}
+
+                  {activeTab === 'full_schedule' && (
+                    <section className="bg-white rounded-2xl p-6 border border-gray-200 shadow-sm">
+                        <div className="mb-4">
+                            <h2 className="text-xl font-semibold text-blue-700 flex items-center gap-2 whitespace-nowrap">
+                                <IconCalendar /> ตารางสอนครู [{filteredTeachers.length}/{teachers.length} คน]
+                            </h2>
+                        </div>
+                        <div className="flex flex-col sm:flex-row gap-2 w-full mb-6">
+                            <button
+                                onClick={() => { setSelectedTimetableTeacherId(''); setTimetableSearchQuery(''); }}
+                                className="px-4 py-2 rounded-xl bg-purple-600 text-white font-medium shadow-sm hover:bg-purple-700 transition-colors duration-200 flex items-center justify-center gap-2"
+                            >
+                                ทั้งหมด
+                            </button>
+                            <select
+                                value={selectedTimetableTeacherId}
+                                onChange={(e) => {
+                                  setSelectedTimetableTeacherId(e.target.value);
+                                  setTimetableSearchQuery('');
+                                }}
+                                className="flex-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 rounded-md shadow-sm appearance-none"
+                              >
+                                <option value="">--เลือกครู--</option>
+                                {teachers.sort((a,b) => a.id.localeCompare(b.id, 'th')).map(teacher => (
+                                  <option key={teacher.id} value={teacher.id}>
+                                    {teacher.id} - {teacher.name}
+                                  </option>
+                                ))}
+                            </select>
+                            <input
+                                type="text"
+                                placeholder="พิมพ์ชื่อครู"
+                                value={timetableSearchQuery}
+                                onChange={(e) => {
+                                  setTimetableSearchQuery(e.target.value);
+                                  setSelectedTimetableTeacherId('');
+                                }}
+                                className="flex-1 block w-full px-4 py-2 text-base border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                            />
+                            <button
+                                onClick={handleExportToExcel}
+                                className="px-4 py-2 rounded-xl bg-green-600 text-white font-medium shadow-sm hover:bg-green-700 transition-colors duration-200 flex items-center justify-center gap-2"
+                                disabled={Object.values(schedule).flat().length === 0}
+                            >
+                                <IconFileDown className="w-5 h-5" />
+                                Export
+                            </button>
+                        </div>
+                        
+                        {(filteredTeachers.length === 0) ? (
+                          <div className="text-center text-gray-500 py-10">
+                            ไม่พบชื่อครูที่คุณค้นหา
+                          </div>
+                        ) : (
+                          filteredTeachers.map(teacher => (
+                              <div key={teacher.id} className="mb-8 last:mb-0">
+                                  <h3 className="text-lg font-bold text-blue-600 mb-2 p-3 bg-blue-50 rounded-t-xl">
+                                      ตารางสอนของ : {teacher.id} - {teacher.name}
+                                  </h3>
+                                  <div className="overflow-x-auto shadow-md rounded-b-xl">
+                                      <table className="min-w-full table-fixed border-collapse">
+                                          <thead>
+                                              <tr className="bg-blue-100 text-blue-800 font-bold text-sm">
+                                                  <th className="p-3 border border-blue-200 w-[15%] text-center sticky left-0 bg-blue-100 z-10">วัน</th>
+                                                  {periods.map(period => (
+                                                      <th key={period} className="p-3 border border-blue-200 w-[8.5%] text-center">
+                                                          คาบที่ {period}
+                                                          <p className="text-[10px] font-normal text-blue-600 mt-1">{currentPeriodTimes[period - 1]}</p>
+                                                      </th>
+                                                  ))}
+                                              </tr>
+                                          </thead>
+                                          <tbody>
+                                              {dayNames.map((day, dayIndex) => (
+                                                  <tr key={dayIndex} className="text-center text-sm even:bg-gray-50">
+                                                      <td className="p-3 border border-gray-200 font-bold bg-blue-50 text-blue-700 sticky left-0 z-10">
+                                                          วัน{day}
+                                                      </td>
+                                                      {periods.map(periodIndex => {
+                                                          const slot = getSlot(teacher.id, dayIndex, periodIndex - 1);
+                                                          return (
+                                                              <td key={`${teacher.id}-${dayIndex}-${periodIndex}`} className={`p-3 border border-gray-200 ${getSlotClass(teacher.id, dayIndex, periodIndex - 1)}`}>
+                                                                  {slot && (
+                                                                      <div>
+                                                                          <p className="font-semibold text-xs sm:text-sm">{slot.subject}</p>
+                                                                          <p className="text-[10px] sm:text-xs text-gray-500">{slot.class}</p>
+                                                                          <p className="text-[10px] sm:text-xs text-gray-500">{slot.room}</p>
+                                                                      </div>
+                                                                  )}
+                                                              </td>
+                                                          );
+                                                      })}
+                                                  </tr>
+                                              ))}
+                                          </tbody>
+                                      </table>
+                                  </div>
+                              </div>
+                          ))
+                        )}
+                    </section>
+                  )}
+                </main>
+                
+                {isImportModalOpen && (
+                    <div className="fixed inset-0 bg-gray-900 bg-opacity-50 flex justify-center items-center p-4 z-50">
+                        <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-2xl relative">
+                            <button onClick={() => setIsImportModalOpen(false)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"><IconX /></button>
+                            <section>
+                                <div className="flex items-center justify-between mb-4">
+                                  <h2 className="text-xl font-semibold text-yellow-700 flex items-center gap-2">
+                                    <IconUpload className="text-yellow-700" /> นำเข้าข้อมูลตารางสอน
+                                  </h2>
+                                </div>
+                                <p className="text-gray-600 mb-6">
+                                  อัปโหลดไฟล์ Excel (.xlsx, .xls) เพื่อนำเข้าข้อมูลตารางสอนใหม่
+                                  <span className="block mt-2 text-sm text-red-600">
+                                    คำเตือน: การนำเข้าข้อมูลใหม่จะล้างข้อมูลตารางสอนเดิมทั้งหมด
+                                  </span>
+                                </p>
+
+                                <div className="bg-yellow-50 border-l-4 border-yellow-200 p-4 rounded-lg mb-6 shadow-sm relative">
+                                    <div className="flex items-center mb-2">
+                                        <IconInfo className="w-5 h-5 text-yellow-700 stroke-current mr-3" />
+                                        <h3 className="font-bold text-yellow-700 text-lg">รายละเอียดหัวข้อไฟล์ Excel</h3>
+                                        <button
+                                          onClick={handleDownloadSampleFile}
+                                          className="absolute top-4 right-4 px-3 py-1 rounded-xl bg-blue-600 text-white font-medium shadow-sm hover:bg-blue-700 transition-colors duration-200 flex items-center justify-center gap-1 text-xs sm:text-sm"
+                                        >
+                                          <IconFileDown className="w-4 h-4" />
+                                          ดาวน์โหลดไฟล์ตัวอย่าง (.xlsx)
+                                        </button>
+                                    </div>
+                                    <p className="text-sm text-yellow-700 mb-4">
+                                        1. ต้องมี 8 Column ดังนี้ [ รหัสครู, ชื่อครู , วัน , คาบที่ , เวลา , วิชา, ห้อง , ห้องเรียน ]<br/>
+                                        2. ในช่องที่ไม่มีข้อมูล ให้ใส่ " . " (จุด)   เช่น ห้องเรียน วิชาลูกเสือ ของ ครูสมศักดิ์
+                                    </p>
+                                    <div className="overflow-x-auto">
+                                        <table className="min-w-full bg-white rounded-lg border border-gray-200 shadow-sm">
+                                            <thead>
+                                                <tr className="bg-yellow-100">
+                                                    <th className="p-3 text-sm font-semibold text-yellow-800 border-b-2 border-yellow-200 text-left">รหัสครู</th>
+                                                    <th className="p-3 text-sm font-semibold text-yellow-800 border-b-2 border-yellow-200 text-left">ชื่อครู</th>
+                                                    <th className="p-3 text-sm font-semibold text-yellow-800 border-b-2 border-yellow-200 text-left">วัน</th>
+                                                    <th className="p-3 text-sm font-semibold text-yellow-800 border-b-2 border-yellow-200 text-left">คาบที่</th>
+                                                    <th className="p-3 text-sm font-semibold text-yellow-800 border-b-2 border-yellow-200 text-left">เวลา</th>
+                                                    <th className="p-3 text-sm font-semibold text-yellow-800 border-b-2 border-yellow-200 text-left">วิชา</th>
+                                                    <th className="p-3 text-sm font-semibold text-yellow-800 border-b-2 border-yellow-200 text-left">ห้อง</th>
+                                                    <th className="p-3 text-sm font-semibold text-yellow-800 border-b-2 border-yellow-200 text-left">ห้องเรียน</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <tr><td className="p-3 text-sm border-b border-gray-200 font-medium text-gray-700">T001</td><td className="p-3 text-sm border-b border-gray-200 font-medium text-gray-700">ครูสมชาย</td><td className="p-3 text-sm border-b border-gray-200 text-gray-600">จันทร์</td><td className="p-3 text-sm border-b border-gray-200 text-gray-600">5</td><td className="p-3 text-sm border-b border-gray-200 text-gray-600">08:30-09:20</td><td className="p-3 text-sm border-b border-gray-200 text-gray-600">คณิตศาสตร์</td><td className="p-3 text-sm border-b border-gray-200 text-gray-600">ม.1/1</td><td className="p-3 text-sm border-b border-gray-200 text-gray-600">ห้อง 101</td></tr>
+                                                <tr className="bg-gray-50"><td className="p-3 text-sm border-b border-gray-200 font-medium text-gray-700">T002</td><td className="p-3 text-sm border-b border-gray-200 font-medium text-gray-700">ครูสมศรี</td><td className="p-3 text-sm border-b border-gray-200 text-gray-600">อังคาร</td><td className="p-3 text-sm border-b border-gray-200 text-gray-600">2</td><td className="p-3 text-sm border-b border-gray-200 text-gray-600">09:20-10:10</td><td className="p-3 text-sm border-b border-gray-200 text-gray-600">ภาษาไทย</td><td className="p-3 text-sm border-b border-gray-200 text-gray-600">ม.2/2</td><td className="p-3 text-sm border-b border-gray-200 text-gray-600">ห้อง 202</td></tr>
+                                                <tr><td className="p-3 text-sm border-b border-gray-200 font-medium text-gray-700">T003</td><td className="p-3 text-sm border-b border-gray-200 font-medium text-gray-700">ครูสมศักดิ์</td><td className="p-3 text-sm border-b border-gray-200 text-gray-600">พุธ</td><td className="p-3 text-sm border-b border-gray-200 text-gray-600">4</td><td className="p-3 text-sm border-b border-gray-200 text-gray-600">11:00-11:50</td><td className="p-3 text-sm border-b border-gray-200 text-gray-600">ลูกเสือ</td><td className="p-3 text-sm border-b border-gray-200 text-gray-600">.</td><td className="p-3 text-sm border-b border-gray-200 text-gray-600">.</td></tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                                
+                                <div className="flex flex-col sm:flex-row items-center gap-4 w-full">
+  <input 
+    id="file-upload-modal"
+    type="file" 
+    accept=".xlsx, .xls"
+    onChange={(e) => {
+      const file = e.target.files[0];
+      if (file) handleFileImport(file);
+    }}
+    className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+  />
+
+  {importFile && (
+    <button 
+      onClick={handleClearSelectedFile} 
+      className="
+        inline-flex 
+        items-center 
+        justify-center
+        p-1 
+        border-0 border-red-500 
+        bg-transparent 
+        text-red-500 
+        rounded-full 
+        hover:bg-red-500 hover:text-white 
+        transition-colors duration-200
+        shrink-0
+      "
+      aria-label="ลบไฟล์"
+      title="ลบไฟล์"
+    >
+      <IconXCircle className="w-6 h-6" />
+      <span> ลบไฟล์ </span>
+    </button>
+  )}
+</div>
+
+                                {isImporting && (
+                                  <div className="mt-4 text-center text-blue-600 font-medium">
+                                    กำลังนำเข้าข้อมูล...
+                                  </div>
+                                )}
+                                {message.text && message.tab === 'import' && message.type === 'error' && (
+                                  <div className={`p-4 rounded-lg shadow mt-6 flex flex-col sm:flex-row items-start sm:items-center justify-between animate-fade-in
+                                    ${message.type === 'success' ? 'bg-green-100 border-l-4 border-green-500 text-green-700' : 
+                                      message.type === 'error' ? 'bg-red-100 border-l-4 border-red-500 text-red-700' :
+                                      'bg-blue-100 border-l-4 border-blue-500 text-blue-700'}`}
+                                    role="alert"
+                                  >
+                                    <div className="flex items-center mb-2 sm:mb-0">
+                                      {message.type === 'success' ? <IconCheckCircle className="h-5 w-5 mr-3" /> : 
+                                       message.type === 'error' ? <IconX className="h-5 w-5 mr-3" /> :
+                                       <IconInfo className="w-5 h-5 mr-3" />}
+                                      <p className="font-medium">{message.text}</p>
+                                    </div>
+                                    {message.type === 'error' && message.details && message.details.length > 0 && (
+                                      <div className="mt-4 p-3 bg-red-50 rounded-lg border border-red-200 w-full">
+                                        <p className="font-semibold text-red-800 mb-2">รายละเอียดข้อผิดพลาด:</p>
+                                        <div className="overflow-x-auto">
+                                          <table className="min-w-full text-left text-sm text-red-700">
+                                            <thead><tr><th className="p-2">แถวที่</th><th className="p-2">เหตุผล</th><th className="p-2">แนวทางแก้ไข</th></tr></thead>
+                                            <tbody>
+                                              {message.details.map((detail, index) => (
+                                                <tr key={index} className="even:bg-red-50"><td className="p-2">{detail.row}</td><td className="p-2">{detail.reason}</td><td className="p-2">{detail.solution}</td></tr>
+                                              ))}
+                                            </tbody>
+                                          </table>
+                                        </div>
+                                      </div>
+                                    )}
+                                    <button
+                                      onClick={() => setMessage({ type: '', text: '', details: [], tab: '' })}
+                                      className={`ml-auto sm:ml-4 p-1 rounded-full transition-colors flex-shrink-0
+                                        ${message.type === 'success' ? 'hover:bg-green-200 text-green-600' : 
+                                          message.type === 'error' ? 'hover:bg-red-200 text-red-600' :
+                                          'hover:bg-blue-200 text-blue-600'}`}
+                                      aria-label="Close message"
+                                    >
+                                      <IconX className="h-4 w-4" />
+                                    </button>
+                                  </div>
+                                )}
+                                {importSuccess && (
+                                    <div className="flex justify-center">
+                                        <button 
+                                            onClick={handleFinishImport}
+                                            className="px-6 py-2 rounded-xl bg-green-600 text-white font-medium shadow-sm hover:bg-green-700 transition-colors duration-200 flex items-center justify-center gap-2"
+                                        >
+                                            <IconCheckCircle className="w-5 h-5" />
+                                            เสร็จสิ้น
+                                        </button>
+                                    </div>
+                                )}
+                            </section>
+                        </div>
                     </div>
-                </div>`;
-        }
-        
-        function createTeacherListTableShell(id, isActive) {
-            return `
-                <div id="${id}" class="table-container ${isActive ? 'active' : ''}">
-                    <div class="overflow-x-auto bg-white rounded-lg shadow">
-                        <table class="min-w-full" style="table-layout: auto;">
-                            <thead class="bg-gray-100">
-                                <tr>
-                                    <th scope="col" class="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase tracking-wider border-r">รหัสครู</th>
-                                    <th scope="col" class="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase tracking-wider border-r">คำนำหน้า</th>
-                                    <th scope="col" class="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase tracking-wider border-r">ชื่อ</th>
-                                    <th scope="col" class="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase tracking-wider border-r">สกุล</th>
-                                    <th scope="col" class="px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">กลุ่มสาระ</th>
-                                </tr>
-                            </thead>
-                            <tbody></tbody>
-                        </table>
+                  )}
+
+                {isModalOpen && selectedAbsentSlot && (
+                  <div className="fixed inset-0 bg-gray-900 bg-opacity-50 flex justify-center items-center p-4 z-50">
+                    <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-lg relative">
+                      <button onClick={() => setIsModalOpen(false)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"><IconX /></button>
+                      <h3 className="text-2xl font-bold text-blue-700 mb-4">มอบหมายครูสอนแทน</h3>
+                      <div className="bg-gray-100 p-4 rounded-xl mb-4 space-y-1">
+                        <p><span className="font-semibold">ครูที่ลา:</span> {getTeacherName(selectedAbsentSlot.teacherId)}</p>
+                        <p><span className="font-semibold">วัน:</span> {dayNames[selectedAbsentSlot.dayIndex]}</p>
+                        <p><span className="font-semibold">คาบ:</span> {selectedAbsentSlot.periodIndex + 1}</p>
+                        <p><span className="font-semibold">เวลา:</span> {selectedAbsentSlot.time || currentPeriodTimes[selectedAbsentSlot.periodIndex]}</p>
+                        <p><span className="font-semibold">วิชา:</span> {selectedAbsentSlot.subject}</p>
+                        <p><span className="font-semibold">ห้อง:</span> {selectedAbsentSlot.room}</p>
+                        {selectedAbsentSlot.substituteId && <p className="pt-2 text-green-600 font-semibold border-t mt-2">ปัจจุบัน: {getTeacherName(selectedAbsentSlot.substituteId)}</p>}
+                      </div>
+                      
+                      <div className="space-y-4">
+                        <h4 className="text-lg font-semibold mb-1">เลือกครูสอนแทน:</h4>
+                        <p className={`font-semibold mb-2 text-xs ${availableSubstitutes.length > 0 ? 'text-blue-600' : 'text-red-600'}`}>
+                          ครูที่ว่างในคาบนี้ = {availableSubstitutes.length} คน
+                        </p>
+                        <select value={selectedSubstituteId} onChange={(e) => setSelectedSubstituteId(e.target.value)} className="block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 rounded-md shadow-sm">
+                          <option value="">-- เลือกครู --</option>
+                          {availableSubstitutes.sort((a,b) => a.name.localeCompare(b.name, 'th')).map(sub => (<option key={sub.id} value={sub.id}>{sub.name}</option>))}
+                        </select>
+
+                        <div className="flex justify-end gap-2">
+                          {selectedAbsentSlot.substituteId ? (
+                              <div className="flex justify-end gap-2">
+                                  <button onClick={cancelSubstitute} className="px-4 py-2 rounded-xl text-gray-700 font-medium hover:bg-gray-200">ยกเลิกการสอนแทน</button>
+                                  <button onClick={() => assignSubstitute(selectedSubstituteId)} disabled={!selectedSubstituteId} className="px-4 py-2 rounded-xl bg-blue-600 text-white font-medium shadow-sm hover:bg-blue-700 disabled:bg-gray-400">สอนแทน</button>
+                              </div>
+                          ) : (
+                              <div className="flex justify-end gap-2">
+                                   <button onClick={() => setIsModalOpen(false)} className="px-4 py-2 rounded-xl text-gray-700 font-medium hover:bg-gray-200">ยกเลิก</button>
+                                  <button onClick={() => assignSubstitute(selectedSubstituteId)} disabled={!selectedSubstituteId} className="px-4 py-2 rounded-xl bg-blue-600 text-white font-medium shadow-sm hover:bg-blue-700 disabled:bg-gray-400">สอนแทน</button>
+                              </div>
+                          )}
+                        </div>
+                      </div>
                     </div>
-                </div>`;
-        }
+                  </div>
+                )}
+
+                {isConfirmModalOpen && (
+                  <div className="fixed inset-0 bg-gray-900 bg-opacity-50 flex justify-center items-center p-4 z-50">
+                    <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm relative">
+                      <h3 className="text-xl font-bold text-blue-700 mb-4">ยืนยันการแจ้งขาดสอน</h3>
+                      <p className="text-gray-700 mb-6">คุณต้องการแจ้งว่าครู <span className="font-semibold">{getTeacherName(selectedTeacherToReportAbsence)}</span> ขาดสอนใน<span className="font-semibold">วัน{dayNames[selectedDayIndex]}</span> ใช่หรือไม่?</p>
+                      <div className="flex justify-end space-x-2">
+                        <button onClick={cancelAbsenceAction} className="px-4 py-2 rounded-xl text-gray-700 font-medium hover:bg-gray-200">ยกเลิก</button>
+                        <button onClick={confirmAbsenceAction} className="px-4 py-2 rounded-xl bg-red-600 text-white font-medium shadow-sm hover:bg-red-700">ลา</button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {isClearConfirmModalOpen && (
+                  <div className="fixed inset-0 bg-gray-900 bg-opacity-50 flex justify-center items-center p-4 z-50">
+                    <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm relative">
+                      <h3 className="text-xl font-bold text-red-700 mb-4">ยืนยันการล้างข้อมูล</h3>
+                      <p className="text-gray-700 mb-6">คุณต้องการล้างข้อมูลทั้งหมด (รวมถึงตารางสอนและรายชื่อครู) และเริ่มใหม่ใช่หรือไม่? การกระทำนี้ไม่สามารถย้อนกลับได้</p>
+                      <div className="flex justify-end space-x-2">
+                        <button onClick={() => setIsClearConfirmModalOpen(false)} className="px-4 py-2 rounded-xl text-gray-700 font-medium hover:bg-gray-200">ยกเลิก</button>
+                        <button onClick={handleClearAllData} disabled={isClearing} className="px-4 py-2 rounded-xl bg-red-600 text-white font-medium shadow-sm hover:bg-red-700 disabled:bg-gray-400">{isClearing ? 'กำลังล้าง...' : 'ยืนยัน'}</button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        };
+
+        // Render the App component to the DOM
+        const container = document.getElementById('root');
+        const root = ReactDOM.createRoot(container);
+        root.render(<App />);
     </script>
 </body>
 </html>
